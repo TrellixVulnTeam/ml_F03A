@@ -25,41 +25,30 @@ FLAGS = tf.flags.FLAGS
 
 
 def parse_example_proto(example_serialized):
-    """Parses an Example proto containing a training example of an image.
+    """
+    Parses an Example proto containing a training example of an image.
 
-	The output of the build_image_data.py image preprocessing script is a dataset
-	containing serialized Example protocol buffers. Each Example proto contains
-	the following fields:
+    The output of the build_image_data.py image preprocessing script is a
+    dataset containing serialized Example protocol buffers. Each Example proto
+    contains the following fields:
 
-	  image/height: 462
-	  image/width: 581
-	  image/colorspace: 'RGB'
-	  image/channels: 3
-	  image/class/label: 615
-	  image/class/synset: 'n03623198'
-	  image/class/text: 'knee pad'
-	  image/object/bbox/xmin: 0.1
-	  image/object/bbox/xmax: 0.9
-	  image/object/bbox/ymin: 0.2
-	  image/object/bbox/ymax: 0.6
-	  image/object/bbox/label: 615
-	  image/format: 'JPEG'
-	  image/filename: 'ILSVRC2012_val_00041207.JPEG'
-	  image/encoded: <JPEG encoded string>
+    image/height: 462
+    image/width: 581
+    image/colorspace: 'RGB'
+    image/channels: 3
+    image/class/label: 615
+    image/class/synset: 'n03623198'
+    image/class/text: 'knee pad'
+    image/object/bbox/xmin: 0.1
+    image/object/bbox/xmax: 0.9
+    image/object/bbox/ymin: 0.2
+    image/object/bbox/ymax: 0.6
+    image/object/bbox/label: 615
+    image/format: 'JPEG'
+    image/filename: 'ILSVRC2012_val_00041207.JPEG'
+    image/encoded: <JPEG encoded string>
 
-	Args:
-	  example_serialized: scalar Tensor tf.string containing a serialized
-		Example protocol buffer.
-
-	Returns:
-	  image_buffer: Tensor tf.string containing the contents of a JPEG file.
-	  label: Tensor tf.int32 containing the label.
-	  bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
-		where each coordinate is [0, 1) and the coordinates are arranged as
-		[ymin, xmin, ymax, xmax].
-	  text: Tensor tf.string containing the human-readable label.
-	"""
-    # Dense features in Example proto.
+    """
     feature_map = {
         'image/encoded': tf.FixedLenFeature([], dtype=tf.string,
                                             default_value=''),
@@ -98,12 +87,12 @@ def parse_example_proto(example_serialized):
 def decode_jpeg(image_buffer, scope=None):  # , dtype=tf.float32):
     """Decode a JPEG string into one 3-D float image Tensor.
 
-	Args:
-	  image_buffer: scalar string Tensor.
-	  scope: Optional scope for op_scope.
-	Returns:
-	  3-D float Tensor with values ranging from [0, 1).
-	"""
+    Args:
+      image_buffer: scalar string Tensor.
+      scope: Optional scope for op_scope.
+    Returns:
+      3-D float Tensor with values ranging from [0, 1).
+    """
     # with tf.op_scope([image_buffer], scope, 'decode_jpeg'):
     # with tf.name_scope(scope, 'decode_jpeg', [image_buffer]):
     with tf.name_scope(scope or 'decode_jpeg'):
@@ -129,9 +118,8 @@ def eval_image(image, height, width, bbox, thread_id, resize):
 
         if resize == 'crop':
             # Note: This is much slower than crop_to_bounding_box
-            #         It seems that the redundant pad step has huge overhead
-            # distorted_image = tf.image.resize_image_with_crop_or_pad(image,
-            #                                                         height, width)
+            # It seems that the redundant pad step has huge overhead
+            # distorted_image = tf.image.resize_i..._pad(image, height, width)
             shape = tf.shape(image)
             y0 = (shape[0] - height) // 2
             x0 = (shape[1] - width) // 2
@@ -140,7 +128,7 @@ def eval_image(image, height, width, bbox, thread_id, resize):
                                                             height,
                                                             width)
         else:
-            sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
+            distorted_bounding_box = tf.image.sample_distorted_bounding_box(
                 tf.shape(image),
                 bounding_boxes=bbox,
                 min_object_covered=0.1,
@@ -148,7 +136,7 @@ def eval_image(image, height, width, bbox, thread_id, resize):
                 area_range=[0.05, 1.0],
                 max_attempts=100,
                 use_image_if_no_bounding_boxes=True)
-            bbox_begin, bbox_size, _ = sample_distorted_bounding_box
+            bbox_begin, bbox_size, _ = distorted_bounding_box
             # Crop the image to the specified bounding box.
             distorted_image = tf.slice(image, bbox_begin, bbox_size)
             resize_method = {
@@ -179,22 +167,22 @@ def eval_image(image, height, width, bbox, thread_id, resize):
 def distort_image(image, height, width, bbox, thread_id=0, scope=None):
     """Distort one image for training a network.
 
-	Distorting images provides a useful technique for augmenting the data
-	set during training in order to make the network invariant to aspects
-	of the image that do not effect the label.
+    Distorting images provides a useful technique for augmenting the data
+    set during training in order to make the network invariant to aspects
+    of the image that do not effect the label.
 
-	Args:
-	  image: 3-D float Tensor of image
-	  height: integer
-	  width: integer
-	  bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
-		where each coordinate is [0, 1) and the coordinates are arranged
-		as [ymin, xmin, ymax, xmax].
-	  thread_id: integer indicating the preprocessing thread.
-	  scope: Optional scope for op_scope.
-	Returns:
-	  3-D float Tensor of distorted image used for training.
-	"""
+    Args:
+      image: 3-D float Tensor of image
+      height: integer
+      width: integer
+      bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
+        where each coordinate is [0, 1) and the coordinates are arranged
+        as [ymin, xmin, ymax, xmax].
+      thread_id: integer indicating the preprocessing thread.
+      scope: Optional scope for op_scope.
+    Returns:
+      3-D float Tensor of distorted image used for training.
+    """
     # with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):
     # with tf.name_scope(scope, 'distort_image', [image, height, width, bbox]):
     with tf.name_scope(scope or 'distort_image'):
@@ -214,14 +202,14 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             tf.summary.image(
                 'image_with_bounding_boxes', image_with_box)
 
-            # A large fraction of image datasets contain a human-annotated bounding
-            # box delineating the region of the image containing the object of interest.
-            # We choose to create a new bounding box for the object which is a randomly
-            # distorted version of the human-annotated bounding box that obeys an allowed
-            # range of aspect ratios, sizes and overlap with the human-annotated
-            # bounding box. If no box is supplied, then we assume the bounding box is
-            # the entire image.
-        sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
+        # A large fraction of image datasets contain a human-annotated bounding
+        # box delineating the region of the image containing the object of
+        # interest. We choose to create a new bounding box for the object
+        # which is a randomly distorted version of the human-annotated bounding
+        # box that obeys an allowed range of aspect ratios, sizes and overlap
+        # with the human-annotated bounding box. If no box is supplied, then we
+        # assume the bounding box is the entire image.
+        distorted_bounding_box = tf.image.sample_distorted_bounding_box(
             tf.shape(image),
             bounding_boxes=bbox,
             min_object_covered=0.1,
@@ -229,7 +217,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             area_range=[0.05, 1.0],
             max_attempts=100,
             use_image_if_no_bounding_boxes=True)
-        bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
+        bbox_begin, bbox_size, distort_bbox = distorted_bounding_box
         if not thread_id:
             image_with_distorted_box = tf.image.draw_bounding_boxes(
                 tf.expand_dims(image, 0), distort_bbox)
@@ -253,8 +241,8 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             distorted_image = tf.image.resize_images(
                 distorted_image, height, width, resize_method,
                 align_corners=False)
-        # Restore the shape since the dynamic slice based upon the bbox_size loses
-        # the third dimension.
+        # Restore the shape since the dynamic slice based upon the bbox_size
+        #  loses the third dimension.
         distorted_image.set_shape([height, width, 3])
         if not thread_id:
             tf.summary.image(
@@ -280,18 +268,18 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
 def distort_color(image, thread_id=0, scope=None):
     """Distort the color of the image.
 
-	Each color distortion is non-commutative and thus ordering of the color ops
-	matters. Ideally we would randomly permute the ordering of the color ops.
-	Rather then adding that level of complication, we select a distinct ordering
-	of color ops for each preprocessing thread.
+    Each color distortion is non-commutative and thus ordering of the color ops
+    matters. Ideally we would randomly permute the ordering of the color ops.
+    Rather then adding that level of complication, we select a distinct
+    ordering of color ops for each preprocessing thread.
 
-	Args:
-	  image: Tensor containing single image.
-	  thread_id: preprocessing thread ID.
-	  scope: Optional scope for op_scope.
-	Returns:
-	  color-distorted image
-	"""
+    Args:
+      image: Tensor containing single image.
+      thread_id: preprocessing thread ID.
+      scope: Optional scope for op_scope.
+    Returns:
+      color-distorted image
+    """
     # with tf.op_scope([image], scope, 'distort_color'):
     # with tf.name_scope(scope, 'distort_color', [image]):
     with tf.name_scope(scope or 'distort_color'):

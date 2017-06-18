@@ -6,10 +6,6 @@ import os
 import time
 
 import numpy as np
-# from numpy import sqrt as np_sqrt
-# from numpy import std as np_std
-# from numpy import mean as np_mean
-# from numpy import median as np_median
 
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -30,9 +26,7 @@ from trainer.global_step import GlobalStepWatcher
 from trainer.cnn_builder import ConvNetBuilder
 
 FLAGS = flags.get_flags()
-
-log_fn = print  # tf.logging.info
-
+log_fn = print
 
 def loss_function(logits, labels):
     # global cross_entropy # HACK TESTING
