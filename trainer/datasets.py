@@ -66,6 +66,22 @@ class FlowersData(Dataset):
             raise ValueError('Invalid data subset "%s"' % subset)
 
 
+class CifarData(Dataset):
+    def __init__(self, data_dir=None):
+        super(CifarData, self).__init__('Cifar', data_dir)
+
+    def num_classes(self):
+        return 10
+
+    def num_examples_per_epoch(self, subset):
+        if subset == 'train':
+            return 10000
+        elif subset == 'validation':
+            return 500
+        else:
+            raise ValueError('Invalid data subset "%s"' % subset)
+
+
 class ImagenetData(Dataset):
     def __init__(self, data_dir=None):
         super(ImagenetData, self).__init__('ImageNet', data_dir)

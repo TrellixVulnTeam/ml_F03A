@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-r"""Downloads and converts Flowers data to TFRecords of TF-Example protos.
+"""Downloads and converts Flowers data to TFRecords of TF-Example protos.
 
 This module downloads the Flowers data, uncompresses it, reads the files
 that make up the Flowers data and creates two TFRecord datasets: one for train
