@@ -300,13 +300,13 @@ class StagedModelVariable(object):
     def assign_sub(self, delta, name=None):
         """Mimic the updates to the variable.
 
-		Args:
-		  delta: is pushed into a staging buffer and will be pumped later.
-		  name: currently ignored; names of ops and the StagingArea are
-				computed without using this pass name.
-		Returns:
-		  The actual updates. The colocation constraint will be reapplied.
-		"""
+        Args:
+          delta: is pushed into a staging buffer and will be pumped later.
+          name: currently ignored; names of ops and the StagingArea are
+                computed without using this pass name.
+        Returns:
+          The actual updates. The colocation constraint will be reapplied.
+        """
         # This parameter is ignored: the StagingArea only supports setting
         # the shared name, not the names of individual ops it uses.
         del name
@@ -314,7 +314,7 @@ class StagedModelVariable(object):
         # colocate_with(None, True) clears the colocation constraints.
         # Push the delta into a staging buffer.
         with ops.colocate_with(None, True), tf.device(
-            self.var_stage_get.device):
+                self.var_stage_get.device):
             delta_staging_area = data_flow_ops.StagingArea(
                 [self.var_stage_get.dtype], shapes=[self.var_stage_get.shape])
             delta_put_op = delta_staging_area.put([delta])
@@ -342,20 +342,20 @@ ops.register_tensor_conversion_function(
 class StagedVariableGetter(object):
     """A variable getter through staging buffers on devices.
 
-	Instead of a caching device, this getter tracks where the variable is used.
-	And on each device, it goes through a staging buffer.
-	"""
+    Instead of a caching device, this getter tracks where the variable is used.
+    And on each device, it goes through a staging buffer.
+    """
 
     def __init__(self, device_num, devices, cpu_device, variable_mgr):
         """Initializer for StagedVariableGetter.
 
-		Args:
-		  device_num: the current device index.
-		  devices: a list of all the devices to build towers.
-		  cpu_device: a cpu_device for this replica. If None, no cpu-caching is
-			  done.
-		  variable_mgr: the parent variable manager.
-		"""
+        Args:
+          device_num: the current device index.
+          devices: a list of all the devices to build towers.
+          cpu_device: a cpu_device for this replica. If None, no cpu-caching is
+              done.
+          variable_mgr: the parent variable manager.
+        """
         self.device_num = device_num
         self.devices = devices
         self.cpu_device = cpu_device
@@ -401,13 +401,13 @@ class StagedVariableGetter(object):
     def trainable_variables_on_device(self, device_num, writable):
         """Return the set of trainable variables on the specified device.
 
-		Args:
-		  device_num: the specified device index.
-		  writable: whether the returned variables is writable or read-only.
+        Args:
+          device_num: the specified device index.
+          writable: whether the returned variables is writable or read-only.
 
-		Returns:
-		  Return the set of trainable variables on the specified device.
-		"""
+        Returns:
+          Return the set of trainable variables on the specified device.
+        """
         params_refs = tf.trainable_variables()
         if writable:
             return params_refs
@@ -415,15 +415,15 @@ class StagedVariableGetter(object):
         for param in params_refs:
             var_name = param.name.split(':')[0]
             _, var_get_op = \
-            self.variable_mgr.staging_vars_on_devices[device_num][
-                var_name]
+                self.variable_mgr.staging_vars_on_devices[device_num][
+                    var_name]
             params.append(var_get_op)
         return params
 
 
 class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
     """Implements fetching a local variable through staging buffers.
-	"""
+    """
 
     def __init__(self, benchmark_cnn):
         super(VariableMgrLocalFetchFromStagedPS, self).__init__(benchmark_cnn)
@@ -451,10 +451,10 @@ class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
 class VariableMgrLocalReplicated(VariableMgr):
     """VariableMgr that implements the --replicated mode for local jobs.
 
-	   Each GPU has its own copy of the variables. To apply gradients,
-	   either nccl all-reduce or a regular cross-device aggregation is used to
-	   replicate the combined gradients to all towers.
-	"""
+       Each GPU has its own copy of the variables. To apply gradients,
+       either nccl all-reduce or a regular cross-device aggregation is used to
+       replicate the combined gradients to all towers.
+    """
 
     def __init__(self, benchmark_cnn, use_nccl):
         super(VariableMgrLocalReplicated, self).__init__(benchmark_cnn)
@@ -507,10 +507,10 @@ class VariableMgrLocalReplicated(VariableMgr):
 class VariableMgrDistributedFetchFromPS(VariableMgr):
     """Implements --variable_update=parameter_server mode for distributed jobs.
 
-	   Variables are stored on a parameter server.  For each step, each tower gets
-	   a copy of the variables from the parameter server, and sends its gradients
-	   to the param server.
-	"""
+       Variables are stored on a parameter server.  For each step, each tower gets
+       a copy of the variables from the parameter server, and sends its gradients
+       to the param server.
+    """
 
     def each_tower_has_variables(self):
         return False
@@ -544,7 +544,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
 
 class VariableMgrDistributedFetchFromStagedPS(
-    VariableMgrDistributedFetchFromPS):
+        VariableMgrDistributedFetchFromPS):
     """Extends VariableMgrDistributedFetchFromPS for --staged_vars."""
 
     def __init__(self, benchmark_cnn):
@@ -572,11 +572,11 @@ class VariableMgrDistributedFetchFromStagedPS(
 class VariableMgrDistributedReplicated(VariableMgr):
     """VariableMgr that implements the --distributed_replicated mode.
 
-	   Each GPU has a copy of the variables, and updates its copy after the
-	   parameter servers are all updated with the gradients from all servers. Only
-	   works with cross_replica_sync=true. Unlike 'replicated', does not use nccl
-	   all-reduce for replicating within a server.
-	"""
+       Each GPU has a copy of the variables, and updates its copy after the
+       parameter servers are all updated with the gradients from all servers. Only
+       works with cross_replica_sync=true. Unlike 'replicated', does not use nccl
+       all-reduce for replicating within a server.
+    """
 
     def each_tower_has_variables(self):
         return True
@@ -587,7 +587,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
             custom_getter=OverrideToLocalVariableIfNotPsVar())
 
     def preprocess_device_grads(self, device_grads):
-        return ([self.benchmark_cnn.param_server_device], device_grads)
+        return [self.benchmark_cnn.param_server_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         device_grads = gradient_state  # From 2nd result of preprocess_device_grads.
@@ -598,7 +598,8 @@ class VariableMgrDistributedReplicated(VariableMgr):
         # Make shadow variable for each original trainable variable.
         for i, (g, v) in enumerate(avg_grads):
             my_name = PS_SHADOW_VAR_PREFIX + '/' + v.name
-            if my_name.endswith(':0'): my_name = my_name[:-2]
+            if my_name.endswith(':0'):
+                my_name = my_name[:-2]
             new_v = tf.get_variable(my_name, dtype=v.dtype.base_dtype,
                                     initializer=v.initial_value,
                                     trainable=True)
@@ -672,19 +673,19 @@ def sum_gradients_all_reduce(tower_grads, devices):
 
 
 def aggregate_gradients_using_copy_with_device_selection(
-    benchmark_cnn, tower_grads, use_mean):
+        benchmark_cnn, tower_grads, use_mean):
     """Aggregate gradients, controlling device for the aggregation.
 
-	Args:
-	  benchmark_cnn: benchmark_cnn class.
-	  tower_grads: List of lists of (gradient, variable) tuples. The outer list
-		is over individual gradients. The inner list is over the gradient
-		calculation for each tower.
-	  use_mean: if True, mean is taken, else sum of gradients is taken.
-	Returns:
-	  List of pairs of (gradient, variable) where the gradient has been averaged
-	   across all towers.
-	"""
+    Args:
+      benchmark_cnn: benchmark_cnn class.
+      tower_grads: List of lists of (gradient, variable) tuples. The outer list
+        is over individual gradients. The inner list is over the gradient
+        calculation for each tower.
+      use_mean: if True, mean is taken, else sum of gradients is taken.
+    Returns:
+      List of pairs of (gradient, variable) where the gradient has been averaged
+       across all towers.
+    """
     if benchmark_cnn.local_parameter_device_flag == 'gpu':
         avail_devices = benchmark_cnn.raw_devices
     else:
@@ -698,18 +699,18 @@ def aggregate_gradients_using_copy_with_device_selection(
 
 
 def aggregate_gradients_using_copy_with_variable_colocation(
-    tower_grads, use_mean):
+        tower_grads, use_mean):
     """Aggregate gradients, colocating computation with the gradient's variable.
 
-	Args:
-	  tower_grads: List of lists of (gradient, variable) tuples. The outer list
-		is over individual gradients. The inner list is over the gradient
-		calculation for each tower.
-	  use_mean: if True, mean is taken, else sum of gradients is taken.
-	Returns:
-	  List of pairs of (gradient, variable) where the gradient has been averaged
-	   across all towers.
-	"""
+    Args:
+      tower_grads: List of lists of (gradient, variable) tuples. The outer list
+        is over individual gradients. The inner list is over the gradient
+        calculation for each tower.
+      use_mean: if True, mean is taken, else sum of gradients is taken.
+    Returns:
+      List of pairs of (gradient, variable) where the gradient has been averaged
+       across all towers.
+    """
     agg_grads = []
     for _, single_grads in enumerate(zip(*tower_grads)):
         var = single_grads[0][1]
@@ -726,17 +727,17 @@ def aggregate_gradients_using_copy_with_variable_colocation(
 def aggregate_gradients_using_copy(tower_grads, use_mean):
     """Calculate the average gradient for each shared variable across all towers.
 
-	Note that this function provides a synchronization point across all towers.
+    Note that this function provides a synchronization point across all towers.
 
-	Args:
-	  tower_grads: List of lists of (gradient, variable) tuples. The outer list
-		is over individual gradients. The inner list is over the gradient
-		calculation for each tower.
-	  use_mean: if True, mean is taken, else sum of gradients is taken.
-	Returns:
-	   List of pairs of (gradient, variable) where the gradient has been averaged
-	   across all towers.
-	"""
+    Args:
+      tower_grads: List of lists of (gradient, variable) tuples. The outer list
+        is over individual gradients. The inner list is over the gradient
+        calculation for each tower.
+      use_mean: if True, mean is taken, else sum of gradients is taken.
+    Returns:
+       List of pairs of (gradient, variable) where the gradient has been averaged
+       across all towers.
+    """
     agg_grads = []
     for grad_and_vars in zip(*tower_grads):
         # Note that each grad_and_vars looks like the following:

@@ -28,6 +28,7 @@ from trainer.cnn_builder import ConvNetBuilder
 FLAGS = flags.get_flags()
 log_fn = print
 
+
 def loss_function(logits, labels):
     # global cross_entropy # HACK TESTING
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -483,10 +484,10 @@ class BenchmarkCNN(object):
                 # In cross-replica sync mode, all workers must run the same
                 # number of local steps, or else the workers running the
                 # extra step will block.
-                done_fn = lambda: local_step == self.num_batches
+                done_fn = local_step == self.num_batches
             else:
-                done_fn = lambda: global_step_watcher.done()
-            while not done_fn():
+                done_fn = global_step_watcher.done()
+            while not done_fn:
                 if local_step == 0:
                     log_fn('Done warm up')
                     if execution_barrier:
@@ -512,8 +513,7 @@ class BenchmarkCNN(object):
             # Waits for the global step to be done, regardless of done_fn.
             while not global_step_watcher.done():
                 time.sleep(.25)
-            images_per_sec = global_step_watcher.steps_per_second() \
-                                    * self.batch_size
+            images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
             log_fn('-' * 64)
             log_fn('total images/sec: %.2f' % images_per_sec)
             log_fn('-' * 64)
@@ -778,8 +778,7 @@ class BenchmarkCNN(object):
             gradvars = list(zip(grads, param_refs))
             return loss, gradvars
 
-    def add_sync_queues_and_barrier(self, name_prefix,
-                                    enqueue_after_list):
+    def add_sync_queues_and_barrier(self, name_prefix, enqueue_after_list):
         """Adds ops to enqueue on all worker queues.
 
         Args:
@@ -791,9 +790,7 @@ class BenchmarkCNN(object):
         """
         self.sync_queue_counter += 1
         num_workers = self.cluster.num_tasks('worker')
-        with tf.device(self.sync_queue_devices[
-                               self.sync_queue_counter % len(
-                               self.sync_queue_devices)]):
+        with tf.device(self.sync_queue_devices[self.sync_queue_counter % len(self.sync_queue_devices)]):
             sync_queues = [
                 tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]],
                              shared_name='%s%s' % (name_prefix, i))
