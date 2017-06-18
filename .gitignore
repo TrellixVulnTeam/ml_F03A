@@ -97,5 +97,3 @@ ENV/
 
 /.idea/
 /.editorconfig
-/deploy_trainer.sh
-/trainer/deploy.sh

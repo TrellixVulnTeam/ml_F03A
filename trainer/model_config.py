@@ -16,7 +16,7 @@
 """Model configurations for CNN benchmarks.
 """
 
-import lenet_model
+from trainer import lenet_model
 
 
 def get_model_config(model):

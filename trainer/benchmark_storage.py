@@ -18,8 +18,11 @@
 def store_benchmark(data, storage_type=None):
     """Store benchmark data.
 
-    data: Dictionary mapping from string benchmark name to numeric benchmark value.
-    storage_type: (string) Specifies where to store benchmark result. If storage_type is 'cbuild_benchmark_datastore': store outputs in our continuous
+    data: Dictionary mapping from string benchmark name to numeric benchmark
+     value.
+    storage_type: (string) Specifies where to store benchmark result. If
+        storage_type is 'cbuild_benchmark_datastore': store outputs in
+        our continuous
     build datastore. gcloud must be setup in current environment
     pointing to the project where data will be added.
     """

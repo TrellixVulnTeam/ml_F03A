@@ -19,7 +19,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops
-import cnn_util
+from trainer import util
 
 FLAGS = tf.flags.FLAGS
 
@@ -136,7 +136,8 @@ def eval_image(image, height, width, bbox, thread_id, resize):
             y0 = (shape[0] - height) // 2
             x0 = (shape[1] - width) // 2
             # distorted_image = tf.slice(image, [y0,x0,0], [height,width,3])
-            distorted_image = tf.image.crop_to_bounding_box(image, y0, x0, height,
+            distorted_image = tf.image.crop_to_bounding_box(image, y0, x0,
+                                                            height,
                                                             width)
         else:
             sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
@@ -158,14 +159,15 @@ def eval_image(image, height, width, bbox, thread_id, resize):
             }[resize]
             # This resizing operation may distort the images because the aspect
             # ratio is not respected.
-            if cnn_util.tensorflow_version() >= 11:
+            if util.tensorflow_version() >= 11:
                 distorted_image = tf.image.resize_images(
                     distorted_image, [height, width],
                     resize_method,
                     align_corners=False)
             else:
                 distorted_image = tf.image.resize_images(
-                    distorted_image, height, width, resize_method, align_corners=False)
+                    distorted_image, height, width, resize_method,
+                    align_corners=False)
         distorted_image.set_shape([height, width, 3])
         if not thread_id:
             tf.summary.image(
@@ -206,8 +208,9 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
 
         # Display the bounding box in the first thread only.
         if not thread_id:
-            image_with_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0),
-                                                          bbox)
+            image_with_box = tf.image.draw_bounding_boxes(
+                tf.expand_dims(image, 0),
+                bbox)
             tf.summary.image(
                 'image_with_bounding_boxes', image_with_box)
 
@@ -242,12 +245,14 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
         # fashion based on the thread number.
         # Note that ResizeMethod contains 4 enumerated resizing methods.
         resize_method = thread_id % 4
-        if cnn_util.tensorflow_version() >= 11:
+        if util.tensorflow_version() >= 11:
             distorted_image = tf.image.resize_images(
-                distorted_image, [height, width], resize_method, align_corners=False)
+                distorted_image, [height, width], resize_method,
+                align_corners=False)
         else:
             distorted_image = tf.image.resize_images(
-                distorted_image, height, width, resize_method, align_corners=False)
+                distorted_image, height, width, resize_method,
+                align_corners=False)
         # Restore the shape since the dynamic slice based upon the bbox_size loses
         # the third dimension.
         distorted_image.set_shape([height, width, 3])
@@ -343,7 +348,8 @@ class ImagePreprocessor(object):
         image = tf.image.decode_jpeg(image_buffer, channels=3,
                                      dct_method='INTEGER_FAST')
         if self.train and self.distortions:
-            image = distort_image(image, self.height, self.width, bbox, thread_id)
+            image = distort_image(image, self.height, self.width, bbox,
+                                  thread_id)
         else:
             image = eval_image(image, self.height, self.width, bbox, thread_id,
                                self.resize_method)
@@ -377,16 +383,20 @@ class ImagePreprocessor(object):
             label_index_batch = [None] * self.device_count
             for device_index in xrange(self.device_count):
                 images[device_index] = tf.parallel_stack(images[device_index])
-                label_index_batch[device_index] = tf.concat(labels[device_index], 0)
+                label_index_batch[device_index] = tf.concat(
+                    labels[device_index], 0)
 
                 # dynamic_pad=True) # HACK TESTING dynamic_pad=True
-                images[device_index] = tf.cast(images[device_index], self.dtype)
+                images[device_index] = tf.cast(images[device_index],
+                                               self.dtype)
                 depth = 3
                 images[device_index] = tf.reshape(
                     images[device_index],
-                    shape=[self.batch_size_per_device, self.height, self.width, depth])
+                    shape=[self.batch_size_per_device, self.height, self.width,
+                           depth])
                 label_index_batch[device_index] = tf.reshape(
-                    label_index_batch[device_index], [self.batch_size_per_device])
+                    label_index_batch[device_index],
+                    [self.batch_size_per_device])
                 # Display the training images in the visualizer.
                 tf.summary.image('images', images)
 

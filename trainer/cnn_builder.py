@@ -12,7 +12,8 @@ from tensorflow.python.layers import core as core_layers
 class ConvNetBuilder(object):
     """Builder of cnn net."""
 
-    def __init__(self, input_op, input_nchan, phase_train, data_format='NCHW', data_type=tf.float32):
+    def __init__(self, input_op, input_nchan, phase_train,
+                 data_format='NCHW', data_type=tf.float32):
         self.top_layer = input_op
         self.top_size = input_nchan
         self.phase_train = phase_train
@@ -25,11 +26,13 @@ class ConvNetBuilder(object):
             'channels_last' if data_format == 'NHWC' else 'channels_first')
 
     def conv(
-        self, num_out_channels, k_height, k_width, d_height=1, d_width=1, mode='SAME',
-        input_layer=None, num_channels_in=None, batch_norm=None, activation='relu'
+        self, num_out_channels, k_height, k_width, d_height=1, d_width=1,
+        mode='SAME', input_layer=None, num_channels_in=None, batch_norm=None,
+        activation='relu'
     ):
         """
         Function for defining a convolutional layer.
+
         :param int num_out_channels: Number of output channels
         :param k_height:
         :param k_width:
@@ -48,6 +51,7 @@ class ConvNetBuilder(object):
 
         if num_channels_in is None:
             num_channels_in = self.top_size
+            print(num_channels_in)
 
         name = 'conv' + str(self.counts['conv'])
         self.counts['conv'] += 1
@@ -56,41 +60,13 @@ class ConvNetBuilder(object):
             strides = [1, d_height, d_width, 1]
             if self.data_format == 'NCHW':
                 strides = [strides[0], strides[3], strides[1], strides[2]]
+                print(strides)
 
-            if mode != 'SAME_RESNET':
-                conv = conv_layers.conv2d(
-                    input_layer,
-                    num_out_channels, [k_height, k_width],
-                    strides=[d_height, d_width],
-                    padding=mode,
-                    data_format=self.channel_pos,
-                    use_bias=False)
-            else:  # Special padding mode for ResNet models
-                if d_height == 1 and d_width == 1:
-                    conv = conv_layers.conv2d(
-                        input_layer,
-                        num_out_channels, [k_height, k_width],
-                        strides=[d_height, d_width],
-                        padding='SAME',
-                        data_format=self.channel_pos,
-                        use_bias=False)
-                else:
-                    rate = 1  # Unused (for 'a trous' convolutions)
-                    kernel_size_effective = k_height + (k_width - 1) * (rate - 1)
-                    pad_total = kernel_size_effective - 1
-                    pad_beg = pad_total // 2
-                    pad_end = pad_total - pad_beg
-                    padding = [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]]
-                    if self.data_format == 'NCHW':
-                        padding = [padding[0], padding[3], padding[1], padding[2]]
-                    input_layer = tf.pad(input_layer, padding)
-                    conv = conv_layers.conv2d(
-                        input_layer,
-                        num_out_channels, [k_height, k_width],
-                        strides=[d_height, d_width],
-                        padding='VALID',
-                        data_format=self.channel_pos,
-                        use_bias=False)
+            conv = conv_layers.conv2d(
+                input_layer, num_out_channels, [k_height, k_width],
+                strides=[d_height, d_width], padding=mode,
+                data_format=self.channel_pos, use_bias=False)
+
             if batch_norm is None:
                 batch_norm = self.use_batch_norm
             if not batch_norm:
@@ -117,7 +93,8 @@ class ConvNetBuilder(object):
             self.top_size = num_out_channels
             return conv1
 
-    def mpool(self, k_height, k_width, d_height=2, d_width=2, mode='VALID', input_layer=None, num_channels_in=None):
+    def mpool(self, k_height, k_width, d_height=2, d_width=2, mode='VALID',
+              input_layer=None, num_channels_in=None):
         """Construct a max pooling layer."""
 
         if input_layer is None:
@@ -129,13 +106,12 @@ class ConvNetBuilder(object):
         self.counts['mpool'] += 1
         pool = pooling_layers.max_pooling2d(
             input_layer, [k_height, k_width], [d_height, d_width],
-            padding=mode,
-            data_format=self.channel_pos,
-            name=name)
+            padding=mode, data_format=self.channel_pos, name=name)
         self.top_layer = pool
         return pool
 
-    def apool(self, k_height, k_width, d_height=2, d_width=2, mode='VALID', input_layer=None, num_channels_in=None):
+    def apool(self, k_height, k_width, d_height=2, d_width=2, mode='VALID',
+              input_layer=None, num_channels_in=None):
         """Construct an average pooling layer."""
 
         if input_layer is None:
@@ -147,9 +123,7 @@ class ConvNetBuilder(object):
         self.counts['apool'] += 1
         pool = pooling_layers.average_pooling2d(
             input_layer, [k_height, k_width], [d_height, d_width],
-            padding=mode,
-            data_format=self.channel_pos,
-            name=name)
+            padding=mode, data_format=self.channel_pos, name=name)
         self.top_layer = pool
         return pool
 
@@ -162,7 +136,8 @@ class ConvNetBuilder(object):
         self.top_size = shape[-1]  # HACK This may not always work
         return self.top_layer
 
-    def affine(self, num_out_channels, input_layer=None, num_channels_in=None, activation='relu'):
+    def affine(self, num_out_channels, input_layer=None, num_channels_in=None,
+               activation='relu'):
 
         if input_layer is None:
             input_layer = self.top_layer
@@ -177,8 +152,11 @@ class ConvNetBuilder(object):
             kernel = tf.get_variable(
                 'weights', [num_channels_in, num_out_channels],
                 self.data_type,
-                tf.random_normal_initializer(stddev=np.sqrt(init_factor / num_channels_in)))
-            biases = tf.get_variable('biases', [num_out_channels], self.data_type, tf.constant_initializer(0.0))
+                tf.random_normal_initializer(
+                    stddev=np.sqrt(init_factor / num_channels_in)))
+            biases = tf.get_variable('biases', [num_out_channels],
+                                     self.data_type,
+                                     tf.constant_initializer(0.0))
             logits = tf.matmul(input_layer, kernel) + biases
             if activation == 'relu':
                 affine1 = tf.nn.relu(logits, name=name)
@@ -189,92 +167,6 @@ class ConvNetBuilder(object):
             self.top_layer = affine1
             self.top_size = num_out_channels
             return affine1
-
-    def resnet_bottleneck_v1(self, depth, depth_bottleneck, stride, input_layer=None, in_size=None):
-
-        if input_layer is None:
-            input_layer = self.top_layer
-        if in_size is None:
-            in_size = self.top_size
-
-        name = 'resnet_v1' + str(self.counts['resnet_v1'])
-        self.counts['resnet_v1'] += 1
-
-        with tf.variable_scope(name):
-            if depth == in_size:
-                if stride == 1:
-                    shortcut = input_layer
-                else:
-                    shortcut = self.mpool(
-                        1,
-                        1,
-                        stride,
-                        stride,
-                        input_layer=input_layer,
-                        num_channels_in=in_size)
-            else:
-                shortcut = self.conv(
-                    depth,
-                    1,
-                    1,
-                    stride,
-                    stride,
-                    activation=None,
-                    input_layer=input_layer,
-                    num_channels_in=in_size)
-            self.conv(
-                depth_bottleneck,
-                1,
-                1,
-                stride,
-                stride,
-                input_layer=input_layer,
-                num_channels_in=in_size)
-            self.conv(depth_bottleneck, 3, 3, 1, 1, mode='SAME_RESNET')
-            res = self.conv(depth, 1, 1, 1, 1, activation=None)
-            output = tf.nn.relu(shortcut + res)
-            self.top_layer = output
-            self.top_size = depth
-            return output
-
-    def inception_module(self, name, cols, input_layer=None, in_size=None):
-
-        if input_layer is None:
-            input_layer = self.top_layer
-        if in_size is None:
-            in_size = self.top_size
-
-        name += str(self.counts[name])
-        self.counts[name] += 1
-        with tf.variable_scope(name):
-            col_layers = []
-            col_layer_sizes = []
-            for c, col in enumerate(cols):
-                col_layers.append([])
-                col_layer_sizes.append([])
-                for l, layer in enumerate(col):
-                    ltype, args = layer[0], layer[1:]
-                    kwargs = {
-                        'input_layer': input_layer,
-                        'num_channels_in': in_size
-                    } if l == 0 else {}
-                    if ltype == 'conv':
-                        self.conv(*args, **kwargs)
-                    elif ltype == 'mpool':
-                        self.mpool(*args, **kwargs)
-                    elif ltype == 'apool':
-                        self.apool(*args, **kwargs)
-                    elif ltype == 'share':  # Share matching layer from previous column
-                        self.top_layer = col_layers[c - 1][l]
-                        self.top_size = col_layer_sizes[c - 1][l]
-                    else:
-                        raise KeyError('Invalid layer type for inception module: \'%s\'' % ltype)
-                    col_layers[c].append(self.top_layer)
-                    col_layer_sizes[c].append(self.top_size)
-            catdim = 3 if self.data_format == 'NHWC' else 1
-            self.top_layer = tf.concat([layers[-1] for layers in col_layers], catdim)
-            self.top_size = sum([sizes[-1] for sizes in col_layer_sizes])
-            return self.top_layer
 
     def residual(self, nout, net, scale=1.0):
         inlayer = self.top_layer

@@ -82,9 +82,10 @@ class ParamServerDeviceSetter(object):
     def __init__(self, worker_device, ps_devices):
         """
         Initializer for ParamServerDevicSetter.
+
         :param worker_device: the device to use for computer ops.
-        :param ps_devices: a list of device to use for Variable ops. Each variable is
-        assigned to the least loaded device.
+        :param ps_devices: a list of device to use for Variable ops. Each
+            variable is assigned to the least loaded device.
         """
         self.ps_devices = ps_devices
         self.worker_device = worker_device
@@ -109,8 +110,8 @@ class VariableMgr(object):
     """
     Abstract superclass for class used by BenchmarkCnn to control variables
 
-    Functions on this class are used to control how variables are created and managed,
-    and how gradients are computed and applied.
+    Functions on this class are used to control how variables are created and
+    managed, and how gradients are computed and applied.
     """
 
     def __init__(self, benchmark_cnn):
@@ -118,7 +119,9 @@ class VariableMgr(object):
         self.staging_delta_ops = []
 
     def each_tower_has_variables(self):
-        """Returns True if each GPU tower of the model has separate variables."""
+        """
+        Returns True if each GPU tower of the model has separate variables.
+        """
         assert False, 'Must be implemented in subclass'
 
     def supports_staged_vars(self):
@@ -133,7 +136,9 @@ class VariableMgr(object):
     def preprocess_device_grads(self, device_grads):
         """
         Preprocess the device gradients prior to applying them.
-        :param device_grads: a list of gradients each of which calculated by a device.
+
+        :param device_grads: a list of gradients each of which calculated
+            by a device.
         """
         del device_grads  # unused by this implementation
         assert False, 'Must be implemented in subclass'
@@ -141,8 +146,8 @@ class VariableMgr(object):
     def get_gradients_to_apply(self, device_num, gradient_state):
         """
         Returns the [(gradient, variable] to apply for device_num.
-        :param device_num: indexes ino the apply_gradients_devices returned by an earlier
-        call to preprocess_device_grads.
+        :param device_num: indexes ino the apply_gradients_devices returned
+            by an earlier call to preprocess_device_grads.
         :param gradient_state: from previous call to apply_gradients_devices.
         """
         del device_num, gradient_state  # unused by this implementation
@@ -169,7 +174,9 @@ class VariableMgr(object):
         return []
 
     def get_devices(self):
-        """Returns devices to use for computation; includes replica selection."""
+        """
+        Returns devices to use for computation; includes replica selection.
+        """
         assert False, 'Must be implemented in subclass'
 
     def trainable_variables_on_device(self, device_num, writable=False):
@@ -193,8 +200,9 @@ class VariableMgrIndependent(VariableMgr):
     """
     VariableMgr that implements the --independent mode for local jobs.
 
-    Each GPU has its own copy of the variables, and gradients are not shared between towers. This can be used to
-    check performance when no data is moved between GPUs.
+    Each GPU has its own copy of the variables, and gradients are not shared
+    between towers. This can be used to check performance when no data is
+    moved between GPUs.
     """
 
     def each_tower_has_variables(self):
@@ -219,8 +227,9 @@ class VariableMgrIndependent(VariableMgr):
 class VariableMgrLocalFetchFromPS(VariableMgr):
     """VariableMgr that implements the --parameter_server mode for local jobs.
 
-    Variables are stored on a parameter server.  For each step, each tower gets a copy of the variables from the
-    parameter server, and sends its gradients to the param server.
+    Variables are stored on a parameter server.  For each step, each tower gets
+    a copy of the variables from the parameter server, and sends its gradients
+    to the param server.
     """
 
     def each_tower_has_variables(self):
@@ -252,8 +261,9 @@ class StagedModelVariable(object):
     """
     Staging variable wrapper that decouples reads and updates.
 
-    This class represents a variable through a staging buffer. Reads from this variable directly gets from the staging
-    buffer. Updates are stacked into another staging buffer, and will be processed later.
+    This class represents a variable through a staging buffer. Reads from this
+    variable directly gets from the staging buffer. Updates are stacked into
+    another staging buffer, and will be processed later.
     """
 
     def __init__(self, real_var, var_stage_get, variable_mgr):
@@ -269,7 +279,9 @@ class StagedModelVariable(object):
         self.variable_mgr = variable_mgr
 
     def _value(self):
-        """The read access of this variable. The content from the staging buffer."""
+        """
+        The read access of this variable. The content from the staging buffer.
+        """
         return self.var_stage_get
 
     def _ref(self):
