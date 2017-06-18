@@ -6,6 +6,10 @@ import os
 import time
 
 import numpy as np
+# from numpy import sqrt as np_sqrt
+# from numpy import std as np_std
+# from numpy import mean as np_mean
+# from numpy import median as np_median
 
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -157,22 +161,15 @@ def get_perf_timing_str(batch_size, step_train_times, scale=1):
         speed_uncertainty = np.std(speeds) / np.sqrt(float(len(speeds)))
         speed_madstd = 1.4826 * np.median(np.abs(speeds - np.median(speeds)))
         speed_jitter = speed_madstd
-        return 'images/sec: %.1f +/- %.1f (jitter = %.1f)' % (
+        return 'images/sec: {:.1f} +/- {:.1f} (jitter = {:.1f})'.format(
             speed_mean, speed_uncertainty, speed_jitter)
     else:
-        return 'images/sec: %.1f' % speed_mean
+        return 'images/sec: {:.1f}'.format(speed_mean)
 
 
 def load_checkpoint(saver, sess, ckpt_dir):
     ckpt = tf.train.get_checkpoint_state(ckpt_dir)
     if ckpt and ckpt.model_checkpoint_path:
-        if os.path.isabs(ckpt.model_checkpoint_path):
-            # Restores from checkpoint with absolute path.
-            model_checkpoint_path = ckpt.model_checkpoint_path
-        else:
-            # Restores from checkpoint with relative path.
-            model_checkpoint_path = os.path.join(ckpt_dir,
-                                                 ckpt.model_checkpoint_path)
         # Assuming model_checkpoint_path looks something like:
         #   /my-favorite-path/imagenet_train/model.ckpt-0,
         # extract global_step from it.
@@ -392,10 +389,9 @@ class BenchmarkCNN(object):
                 count_top_5 += results[1]
                 if (step + 1) % FLAGS.display_every == 0:
                     duration = time.time() - start_time
-                    examples_per_sec = self.batch_size *\
-                                       self.num_batches / duration
+                    ex_per_sec = self.batch_size * self.num_batches / duration
                     log_fn(
-                        '%i\t%.1f examples/sec' % (step + 1, examples_per_sec))
+                        '%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
                     start_time = time.time()
             precision_at_1 = count_top_1 / total_eval_count
             recall_at_5 = count_top_5 / total_eval_count
@@ -437,7 +433,8 @@ class BenchmarkCNN(object):
         summary_op = tf.summary.merge_all()
         is_chief = (not self.job_name or self.task_index == 0)
         summary_writer = None
-        if is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
+        if is_chief and FLAGS.summary_verbosity and FLAGS.train_dir \
+                and FLAGS.save_summaries_steps > 0:
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir,
                                                    tf.get_default_graph())
 
@@ -472,10 +469,10 @@ class BenchmarkCNN(object):
                                                    FLAGS.pretrain_dir)
             global_step_watcher = GlobalStepWatcher(
                 sess, global_step,
-                len(
-                    self.worker_hosts) * self.num_warmup_batches + init_global_step,
-                len(self.worker_hosts) * (
-                    self.num_warmup_batches + self.num_batches) - 1)
+                len(self.worker_hosts) * self.num_warmup_batches
+                + init_global_step,
+                len(self.worker_hosts) * (self.num_warmup_batches
+                                          + self.num_batches) - 1)
             global_step_watcher.start()
 
             if self.graph_file is not None:
@@ -521,7 +518,8 @@ class BenchmarkCNN(object):
             # Waits for the global step to be done, regardless of done_fn.
             while not global_step_watcher.done():
                 time.sleep(.25)
-            images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
+            images_per_sec = global_step_watcher.steps_per_second() \
+                                    * self.batch_size
             log_fn('-' * 64)
             log_fn('total images/sec: %.2f' % images_per_sec)
             log_fn('-' * 64)

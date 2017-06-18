@@ -153,7 +153,8 @@ class VariableMgr(object):
         del device_num, gradient_state  # unused by this implementation
         assert False, 'Must be implemented in subclass'
 
-    def append_apply_gradients_ops(self, gradient_state, opt, grads, training_ops):
+    def append_apply_gradients_ops(self, gradient_state, opt, grads,
+                                   training_ops):
         """
         Adds training ops for grads to 'training_ops'.
         :param gradient_state: from previous call to apply_gradients_devices.
@@ -218,7 +219,8 @@ class VariableMgrIndependent(VariableMgr):
         device_grads = gradient_state
         # Note that each grad_and_vars looks like the following:
         #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        return [grad_and_vars[device_num] for grad_and_vars in zip(*device_grads)]
+        return [grad_and_vars[device_num] for grad_and_vars in
+                zip(*device_grads)]
 
     def get_devices(self):
         return self.benchmark_cnn.raw_devices
@@ -250,10 +252,12 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
     def get_devices(self):
         raw_devices = self.benchmark_cnn.raw_devices
         if self.benchmark_cnn.local_parameter_device_flag == 'gpu':
-            return [ParamServerDeviceSetter(d, raw_devices) for d in raw_devices]
+            return [ParamServerDeviceSetter(d, raw_devices) for d in
+                    raw_devices]
         else:
             return [tf.train.replica_device_setter(
-                worker_device=d, ps_device=self.benchmark_cnn.param_server_device,
+                worker_device=d,
+                ps_device=self.benchmark_cnn.param_server_device,
                 ps_tasks=1) for d in raw_devices]
 
 
@@ -309,7 +313,8 @@ class StagedModelVariable(object):
 
         # colocate_with(None, True) clears the colocation constraints.
         # Push the delta into a staging buffer.
-        with ops.colocate_with(None, True), tf.device(self.var_stage_get.device):
+        with ops.colocate_with(None, True), tf.device(
+            self.var_stage_get.device):
             delta_staging_area = data_flow_ops.StagingArea(
                 [self.var_stage_get.dtype], shapes=[self.var_stage_get.shape])
             delta_put_op = delta_staging_area.put([delta])
@@ -330,7 +335,8 @@ class StagedModelVariable(object):
 
 
 ops.register_tensor_conversion_function(
-    StagedModelVariable, StagedModelVariable._TensorConversionFunction)  # pylint: disable=protected-access
+    StagedModelVariable,
+    StagedModelVariable._TensorConversionFunction)  # pylint: disable=protected-access
 
 
 class StagedVariableGetter(object):
@@ -356,7 +362,8 @@ class StagedVariableGetter(object):
         self.variable_mgr = variable_mgr
 
     def __call__(self, getter, name, *args, **kwargs):
-        staging_ops = self.variable_mgr.staging_vars_on_devices[self.device_num]
+        staging_ops = self.variable_mgr.staging_vars_on_devices[
+            self.device_num]
         if name in staging_ops:
             put_op, get_op = staging_ops[name]
             return get_op
@@ -407,7 +414,8 @@ class StagedVariableGetter(object):
         params = []
         for param in params_refs:
             var_name = param.name.split(':')[0]
-            _, var_get_op = self.variable_mgr.staging_vars_on_devices[device_num][
+            _, var_get_op = \
+            self.variable_mgr.staging_vars_on_devices[device_num][
                 var_name]
             params.append(var_get_op)
         return params
@@ -475,7 +483,8 @@ class VariableMgrLocalReplicated(VariableMgr):
         device_grads = gradient_state
         # Note that each grad_and_vars looks like the following:
         #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        return [grad_and_vars[device_num] for grad_and_vars in zip(*device_grads)]
+        return [grad_and_vars[device_num] for grad_and_vars in
+                zip(*device_grads)]
 
     def get_post_init_ops(self):
         # Copy initialized values for variables on GPU 0 to other GPUs.
@@ -526,7 +535,8 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def get_devices(self):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
-            len(self.benchmark_cnn.ps_hosts), tf.contrib.training.byte_size_load_fn)
+            len(self.benchmark_cnn.ps_hosts),
+            tf.contrib.training.byte_size_load_fn)
         return [tf.train.replica_device_setter(
             worker_device=d, cluster=self.benchmark_cnn.cluster,
             ps_strategy=ps_strategy)
@@ -538,7 +548,8 @@ class VariableMgrDistributedFetchFromStagedPS(
     """Extends VariableMgrDistributedFetchFromPS for --staged_vars."""
 
     def __init__(self, benchmark_cnn):
-        super(VariableMgrDistributedFetchFromStagedPS, self).__init__(benchmark_cnn)
+        super(VariableMgrDistributedFetchFromStagedPS, self).__init__(
+            benchmark_cnn)
         self.staging_vars_on_devices = [dict() for _ in
                                         self.benchmark_cnn.raw_devices]
         self.staged_vars_on_cpu = {}
@@ -655,7 +666,8 @@ def sum_grad_and_var_all_reduce(grad_and_vars, devices):
 def sum_gradients_all_reduce(tower_grads, devices):
     new_tower_grads = []
     for grad_and_vars in zip(*tower_grads):
-        new_tower_grads.append(sum_grad_and_var_all_reduce(grad_and_vars, devices))
+        new_tower_grads.append(
+            sum_grad_and_var_all_reduce(grad_and_vars, devices))
     return list(zip(*new_tower_grads))
 
 
