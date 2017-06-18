@@ -50,22 +50,6 @@ class Dataset(object):
         return self.name
 
 
-class FlowersData(Dataset):
-    def __init__(self, data_dir=None):
-        super(FlowersData, self).__init__('Flowers', data_dir)
-
-    def num_classes(self):
-        return 5
-
-    def num_examples_per_epoch(self, subset):
-        if subset == 'train':
-            return 3170
-        elif subset == 'validation':
-            return 500
-        else:
-            raise ValueError('Invalid data subset "%s"' % subset)
-
-
 class CifarData(Dataset):
     def __init__(self, data_dir=None):
         super(CifarData, self).__init__('Cifar', data_dir)
