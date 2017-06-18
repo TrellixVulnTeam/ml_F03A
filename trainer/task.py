@@ -333,6 +333,7 @@ class BenchmarkCNN(object):
         """Print basic information."""
         log_fn('Model:       %s' % self.model)
         log_fn('Mode:        %s' % get_mode_from_flags())
+        log_fn('Batches:        %s' % self.num_batches)
         log_fn('Batch size:  %s global' % self.batch_size)
         log_fn('             %s per device' % (
             self.batch_size / len(self.devices)))
@@ -481,13 +482,12 @@ class BenchmarkCNN(object):
             local_step = -1 * self.num_warmup_batches
 
             if FLAGS.cross_replica_sync and FLAGS.job_name:
-                # In cross-replica sync mode, all workers must run the same
-                # number of local steps, or else the workers running the
-                # extra step will block.
-                done_fn = local_step == self.num_batches
+                # In cross-replica sync mode, all workers must run the same number of
+                # local steps, or else the workers running the extra step will block.
+                done_fn = lambda: local_step == self.num_batches
             else:
-                done_fn = global_step_watcher.done()
-            while not done_fn:
+                done_fn = lambda: global_step_watcher.done()
+            while not done_fn():
                 if local_step == 0:
                     log_fn('Done warm up')
                     if execution_barrier:

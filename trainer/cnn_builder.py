@@ -74,9 +74,7 @@ class ConvNetBuilder(object):
                     'biases', [num_out_channels], self.data_type,
                     tf.constant_initializer(0.0))
                 biased = tf.reshape(
-                    tf.nn.bias_add(
-                        conv, biases, data_format=self.data_format),
-                    conv.get_shape())
+                    tf.nn.bias_add(conv, biases, data_format=self.data_format), conv.get_shape())
             else:
                 self.top_layer = conv
                 self.top_size = num_out_channels
