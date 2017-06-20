@@ -1,11 +1,17 @@
+from __future__ import print_function
+
+import os
+import time
+
 import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops
 
 from trainer2 import manager
 from trainer2 import flags
-
+from trainer2.global_step import GlobalStepWatcher
 FLAGS = flags.get_flags()
+log_fn = print
 
 
 class Trainer(object):
@@ -14,11 +20,21 @@ class Trainer(object):
     def __init__(self, model, task):
         self.model = model
         self.task = task
-        self.sv = None
-        self.saver = None
-        self.summary_op = None
+        self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
         self.manager = manager.VariableMgrLocalFetchFromPS(self)
+        self.ps_hosts = FLAGS.ps_hosts.split(',')
+        self.worker_hosts = FLAGS.worker_hosts.split(',')
+
+        autotune_threshold = FLAGS.autotune_threshold if (
+            FLAGS.autotune_threshold) else 1
+        min_autotune_warmup = 5 * autotune_threshold * autotune_threshold
+        self.num_warmup_batches = FLAGS.num_warmup_batches if (
+            FLAGS.num_warmup_batches) else max(10, min_autotune_warmup)
+        self.graph_file = FLAGS.graph_file
+        self.resize_method = FLAGS.resize_method
+        self.sync_queue_counter = 0
+        self.num_gpus = FLAGS.num_gpus
 
         self.task_index = FLAGS.task_index
         self.local_parameter_device_flag = FLAGS.local_parameter_device
@@ -44,23 +60,119 @@ class Trainer(object):
     def train(self):
 
         (enqueue_ops, fetches) = self.build_graph()
-        is_chief = self.task.index == 0
-        device_fn = ''
+        main_fetch_group = tf.group(*fetches)
+
+        execution_barrier = None
+        if self.job_name and not FLAGS.cross_replica_sync:
+            execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
+
         global_step = tf.contrib.framework.get_global_step()
+        with tf.device(self.global_step_device):
+            with tf.control_dependencies([main_fetch_group]):
+                inc_global_step = global_step.assign_add(1)
+                fetches.append(inc_global_step)
 
-        # Handle cluster config
+        if self.job_name and FLAGS.cross_replica_sync:
+            # Block all replicas until all replicas are ready for next step.
+            fetches.append(self.add_sync_queues_and_barrier('sync_queues_step_end_', [main_fetch_group]))
 
-        # Build model
-        with tf.device(device_fn):
-            # Create a saver for writing training checkpoints.
-            self.saver = tf.train.Saver()
-            self.summary_op = tf.summary.merge_all()
+        variable_mgr_post_init_ops = self.manager.get_post_init_ops()
+        if variable_mgr_post_init_ops:
+            post_init_op_group = tf.group(*variable_mgr_post_init_ops)
+        else:
+            post_init_op_group = None
 
-        self.set_sv(is_chief, global_step)
+        local_var_init_op = tf.local_variables_initializer()
+        summary_op = tf.summary.merge_all()
+        is_chief = (not self.job_name or self.task_index == 0)
+        summary_writer = None
+        if is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
+            summary_writer = tf.summary.FileWriter(FLAGS.train_dir, tf.get_default_graph())
 
-        with self.sv.managed_session('', config=None) as sess:
-            print('sess running')
-            # while not self.sv.should_stop() and global_step < 1000:
+        sv = self.set_sv(is_chief, global_step, summary_writer)
+
+        step_train_times = []
+        with sv.managed_session(
+                master='',
+                config=create_config_proto(),
+                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
+
+            for i in range(len(enqueue_ops)):
+                sess.run(enqueue_ops[:(i + 1)])
+            sess.run(local_var_init_op)
+            if post_init_op_group:
+                sess.run(post_init_op_group)
+
+            init_global_step = 0
+
+            global_step_watcher = GlobalStepWatcher(
+                sess, global_step,
+                len(self.worker_hosts) * self.num_warmup_batches
+                + init_global_step,
+                len(self.worker_hosts) * (self.num_warmup_batches
+                                          + self.num_batches) - 1)
+            global_step_watcher.start()
+
+            if self.graph_file is not None:
+                path, filename = os.path.split(self.graph_file)
+                as_text = filename.endswith('txt')
+                log_fn('Writing GraphDef as %s to %s' % (
+                    'text' if as_text else 'binary', self.graph_file))
+                tf.train.write_graph(sess.graph_def, path, filename, as_text)
+
+            log_fn('Running warm up')
+            local_step = -1 * self.num_warmup_batches
+
+            if FLAGS.cross_replica_sync and FLAGS.job_name:
+                # In cross-replica sync mode, all workers must run the same number of
+                # local steps, or else the workers running the extra step will block.
+                done_fn = lambda: local_step == self.num_batches
+            else:
+                done_fn = lambda: global_step_watcher.done()
+            while not done_fn():
+                if local_step == 0:
+                    log_fn('Done warm up')
+                    if execution_barrier:
+                        log_fn('Waiting for other replicas to finish warm up')
+                        assert global_step_watcher.start_time == 0
+                        sess.run([execution_barrier])
+
+                    log_fn('Step\tImg/sec\tloss')
+                    assert len(step_train_times) == self.num_warmup_batches
+                    step_train_times = []  # reset to ignore warm up batches
+                if summary_writer and (
+                            local_step + 1) % FLAGS.save_summaries_steps == 0:
+                    fetch_summary = summary_op
+                else:
+                    fetch_summary = None
+                summary_str = benchmark_one_step(
+                    sess, fetches, local_step, self.batch_size,
+                    step_train_times,
+                    self.trace_filename, fetch_summary)
+                if summary_str is not None and is_chief:
+                    sv.summary_computed(sess, summary_str)
+                local_step += 1
+            # Waits for the global step to be done, regardless of done_fn.
+            while not global_step_watcher.done():
+                time.sleep(.25)
+            images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
+            log_fn('-' * 64)
+            log_fn('total images/sec: %.2f' % images_per_sec)
+            log_fn('-' * 64)
+            if is_chief:
+                store_benchmarks({'total_images_per_sec': images_per_sec})
+            # Save the model checkpoint.
+            if FLAGS.train_dir is not None and is_chief:
+                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                if not gfile.Exists(FLAGS.train_dir):
+                    gfile.MakeDirs(FLAGS.train_dir)
+                sv.saver.save(sess, checkpoint_path, global_step)
+
+            if execution_barrier:
+                # Wait for other workers to reach the end, so this worker
+                #  doesn't go away underneath them.
+                sess.run([execution_barrier])
+        sv.stop()
 
     def build_graph(self):
 
@@ -255,16 +367,50 @@ class Trainer(object):
             gradvars = list(zip(grads, param_refs))
             return loss, gradvars
 
-    def set_sv(self, is_chief, global_step):
-        self.sv = tf.train.Supervisor(
+    def add_sync_queues_and_barrier(self, name_prefix, enqueue_after_list):
+        """Adds ops to enqueue on all worker queues.
+
+        Args:
+          name_prefix: prefixed for the shared_name of ops.
+          enqueue_after_list: control dependency from ops.
+
+        Returns:
+          an op that should be used as control dependency before starting next step.
+        """
+        self.sync_queue_counter += 1
+        num_workers = self.cluster.num_tasks('worker')
+        with tf.device(self.sync_queue_devices[self.sync_queue_counter % len(self.sync_queue_devices)]):
+            sync_queues = [
+                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]],
+                             shared_name='%s%s' % (name_prefix, i))
+                for i in range(num_workers)]
+            queue_ops = []
+            # For each other worker, add an entry in a queue, signaling that it can
+            # finish this step.
+            token = tf.constant(False)
+            with tf.control_dependencies(enqueue_after_list):
+                for i, q in enumerate(sync_queues):
+                    if i == self.task_index:
+                        queue_ops.append(tf.no_op())
+                    else:
+                        queue_ops.append(q.enqueue(token))
+
+            # Drain tokens off queue for this worker, one for each other worker.
+            queue_ops.append(
+                sync_queues[self.task_index].dequeue_many(
+                    len(sync_queues) - 1))
+
+            return tf.group(*queue_ops)
+
+    def set_sv(self, is_chief, global_step, summary_writer):
+        return tf.train.Supervisor(
             is_chief=is_chief,
-            logdir='train_dir',
-            init_op=tf.global_variables_initializer(),
-            saver=tf.train.Saver(),
-            summary_op=None,
+            logdir=FLAGS.train_dir,
+            saver=tf.train.Saver(tf.global_variables()),
             global_step=global_step,
-            save_model_secs=0,
-            summary_writer=None
+            summary_op=None,
+            save_model_secs=FLAGS.save_model_secs,
+            summary_writer=summary_writer
         )
 
 
@@ -311,3 +457,13 @@ def loss_function(logits, labels):
         logits=logits, labels=labels, name='xentropy')
     loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     return loss
+
+
+def create_config_proto():
+    config = tf.ConfigProto()
+    config.allow_soft_placement = True
+    config.intra_op_parallelism_threads = FLAGS.num_intra_threads
+    config.inter_op_parallelism_threads = FLAGS.num_inter_threads
+    # config.gpu_options.force_gpu_compatible = FLAGS.force_gpu_compatible
+    # config.gpu_options.force_gpu_compatible = True
+    return config
