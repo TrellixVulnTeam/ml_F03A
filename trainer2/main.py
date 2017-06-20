@@ -5,12 +5,13 @@ import tensorflow as tf
 
 from trainer2 import task
 from trainer2 import train
-from trainer2 import model
+from trainer2.model import Model
+
 
 def main(_):
     print('Init training...')
-
-    trainer = train.Trainer(model.Model.trial(), task.Task())
+    model = Model.trial()
+    trainer = train.Trainer(model, task.Task())
     trainer.run()
 
 
