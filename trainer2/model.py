@@ -15,7 +15,6 @@ class Model:
         self.l2_loss = l2_loss
         self.__check_init()
 
-
     def __check_init(self):
         assert self.initial_lr > 0.0
         assert len(self.layers) > 0
