@@ -1,4 +1,6 @@
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.layers import convolutional as conv_layers
 DEFAULT_PADDING = 'SAME'
 
 
@@ -64,14 +66,48 @@ class Conv2dLayer(Layer):
             self.outputs = self.activation(conv_bias)
 
 
+class Conv2dLayer2(Layer):
+    """
+    Layer implementing a 2D convolution-based transformation of its inputs.
+    """
+
+    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name, data_format='NHWC', data_type=tf.float32):
+        super(Conv2dLayer2, self).__init__(name)
+        self.num_input_channels = num_input_channels
+        self.num_output_channels = num_output_channels
+        self.kernel_dim_1 = kernel_dim_1
+        self.kernel_dim_2 = kernel_dim_2
+        self.data_format = data_format
+        self.data_type = data_type
+
+    def set_outputs(self):
+
+        with tf.variable_scope(self.name):
+            conv = conv_layers.conv2d(
+                self.inputs,
+                self.num_output_channels,
+                [self.kernel_dim_1, self.kernel_dim_2],
+                padding='SAME',
+                use_bias=False,
+                data_format='channels_last'
+            )
+
+            biases = tf.get_variable('biases', [self.num_output_channels], self.data_type, tf.constant_initializer(0.0))
+            conv_bias = tf.reshape(tf.nn.bias_add(conv, biases, data_format=self.data_format), conv.get_shape())
+            self.outputs = self.activation(conv_bias)
+            print('CONV: {} => {}'.format(self.inputs.get_shape(), self.outputs.get_shape()))
+
+
 class AffineLayer(Layer):
     """
     Fully Connected Layer
     """
-    def __init__(self, name, flatten_inputs=False, final_layer=False):
+    def __init__(self, name, num_channels_in, num_channels_out, flatten_inputs=False, final_layer=False):
         super(AffineLayer, self).__init__(name)
         self.final_layer = final_layer
         self.flatten_inputs = flatten_inputs
+        self.num_channels_in = num_channels_in
+        self.num_channels_out = num_channels_out
         self.weights = None
 
     def set_inputs(self, inputs):
@@ -81,18 +117,39 @@ class AffineLayer(Layer):
         self.set_outputs()
 
     def set_outputs(self):
-        with tf.name_scope(self.name):
+        with tf.variable_scope(self.name):
 
-            input_dim = self.inputs.get_shape()[1].value
-            output_dim = 10 if self.final_layer else int(input_dim/2)
+            init_factor = 2. if self.activation == tf.nn.relu else 1.
 
-            self.weights = _weights([input_dim, output_dim])
-            biases = tf.Variable(tf.zeros([output_dim]), name='biases')
+            self.weights = tf.get_variable(
+                'weights',
+                [self.num_channels_in, self.num_channels_out],
+                tf.float32,
+                tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in))
+            )
+            biases = tf.get_variable('biases', [self.num_channels_out],
+                                     tf.float32,
+                                     tf.constant_initializer(0.0))
+            # self.weights = _weights([input_dim, output_dim])
+            # biases = tf.Variable(tf.zeros([output_dim]), name='biases')
 
             if self.final_layer:
                 self.outputs = tf.add(tf.matmul(self.inputs, self.weights), biases)
             else:
                 self.outputs = self.activation(tf.matmul(self.inputs, self.weights) + biases)
+            print('CONV: {} => {}'.format(self.inputs.get_shape(), self.outputs.get_shape()))
+
+
+class ReshapeLayer(Layer):
+
+    def __init__(self, output_shape=None, name='reshape'):
+        super(ReshapeLayer, self).__init__(name)
+        self.output_shape = (-1,) if output_shape is None else output_shape
+
+    def set_outputs(self):
+        with tf.variable_scope(self.name):
+            self.outputs = tf.reshape(self.inputs, self.output_shape)
+            print('CONV: {} => {}'.format(self.inputs.get_shape(), self.outputs.get_shape()))
 
 
 class PoolLayer(Layer):
@@ -108,10 +165,11 @@ class PoolLayer(Layer):
         with tf.name_scope(self.name):
             self.outputs = tf.nn.max_pool(
                 self.inputs,
-                ksize=[1, 3, 3, 1],
+                ksize=[1, 2, 2, 1],
                 strides=[1, 2, 2, 1],
-                padding=DEFAULT_PADDING,
+                padding='VALID',
                 name=self.name)
+            print('CONV: {} => {}'.format(self.inputs.get_shape(), self.outputs.get_shape()))
 
 
 class NormLayer(Layer):

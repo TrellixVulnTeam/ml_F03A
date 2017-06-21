@@ -51,7 +51,8 @@ class ConvNetBuilder(object):
 
         if num_channels_in is None:
             num_channels_in = self.top_size
-            print(num_channels_in)
+
+        print('ch out: {}, in: {}'.format(num_out_channels, num_channels_in))
 
         name = 'conv' + str(self.counts['conv'])
         self.counts['conv'] += 1
@@ -106,6 +107,7 @@ class ConvNetBuilder(object):
             input_layer, [k_height, k_width], [d_height, d_width],
             padding=mode, data_format=self.channel_pos, name=name)
         self.top_layer = pool
+        print('POOL {} => {}'.format(input_layer.get_shape(), pool.get_shape()))
         return pool
 
     def apool(self, k_height, k_width, d_height=2, d_width=2, mode='VALID',
@@ -129,7 +131,7 @@ class ConvNetBuilder(object):
 
         if input_layer is None:
             input_layer = self.top_layer
-
+            print('shape: {}'.format(shape))
         self.top_layer = tf.reshape(input_layer, shape)
         self.top_size = shape[-1]  # HACK This may not always work
         return self.top_layer
@@ -141,6 +143,7 @@ class ConvNetBuilder(object):
             input_layer = self.top_layer
         if num_channels_in is None:
             num_channels_in = self.top_size
+            print('ch out: {}, in: {}'.format(num_out_channels, num_channels_in))
 
         name = 'affine' + str(self.counts['affine'])
         self.counts['affine'] += 1

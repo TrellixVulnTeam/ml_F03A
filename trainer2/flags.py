@@ -65,7 +65,7 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_string(
-    'device', 'cpu',
+    'device', 'gpu',
     'Device to use for computation: cpu or gpu'
 )
 

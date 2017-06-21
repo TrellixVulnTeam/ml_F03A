@@ -3,9 +3,12 @@ from __future__ import print_function
 import os
 import time
 
+import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops
+from tensorflow.python.platform import gfile
+from tensorflow.python.client import timeline
 
 from trainer2 import manager
 from trainer2 import flags
@@ -20,6 +23,7 @@ class Trainer(object):
     def __init__(self, model, task):
         self.model = model
         self.task = task
+        self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
         self.manager = manager.VariableMgrLocalFetchFromPS(self)
@@ -35,6 +39,7 @@ class Trainer(object):
         self.resize_method = FLAGS.resize_method
         self.sync_queue_counter = 0
         self.num_gpus = FLAGS.num_gpus
+        self.batch_size = self.model.batch_size * self.num_gpus
 
         self.task_index = FLAGS.task_index
         self.local_parameter_device_flag = FLAGS.local_parameter_device
@@ -93,9 +98,7 @@ class Trainer(object):
 
         step_train_times = []
         with sv.managed_session(
-                master='',
-                config=create_config_proto(),
-                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
+                master='', config=create_config_proto(), start_standard_services=FLAGS.summary_verbosity > 0) as sess:
 
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
@@ -140,8 +143,7 @@ class Trainer(object):
                     log_fn('Step\tImg/sec\tloss')
                     assert len(step_train_times) == self.num_warmup_batches
                     step_train_times = []  # reset to ignore warm up batches
-                if summary_writer and (
-                            local_step + 1) % FLAGS.save_summaries_steps == 0:
+                if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
                     fetch_summary = summary_op
                 else:
                     fetch_summary = None
@@ -159,8 +161,7 @@ class Trainer(object):
             log_fn('-' * 64)
             log_fn('total images/sec: %.2f' % images_per_sec)
             log_fn('-' * 64)
-            if is_chief:
-                store_benchmarks({'total_images_per_sec': images_per_sec})
+
             # Save the model checkpoint.
             if FLAGS.train_dir is not None and is_chief:
                 checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
@@ -176,12 +177,14 @@ class Trainer(object):
 
     def build_graph(self):
 
-        phase_train = True
+        phase_train = not (FLAGS.eval or FLAGS.forward_only)
         use_synthetic_gpu_images = True
 
         data_type = tf.float32
         input_data_type = tf.float32
         input_nchan = 3
+        tf.set_random_seed(1234)
+        np.random.seed(4321)
 
         enqueue_ops = []
         losses = []
@@ -236,6 +239,16 @@ class Trainer(object):
         if staging_delta_ops:
             enqueue_ops.append(tf.group(*(staging_delta_ops)))
 
+        if not phase_train:
+            if FLAGS.forward_only:
+                all_logits = tf.concat(all_logits, 0)
+                fetches = [all_logits] + enqueue_ops
+            else:
+                all_top_1_ops = tf.reduce_sum(all_top_1_ops)
+                all_top_5_ops = tf.reduce_sum(all_top_5_ops)
+                fetches = [all_top_1_ops, all_top_5_ops] + enqueue_ops
+            return (enqueue_ops, fetches)
+
         extra_nccl_ops = []
         apply_gradient_devices, gradient_state = (
             self.manager.preprocess_device_grads(device_grads))
@@ -246,7 +259,7 @@ class Trainer(object):
                 total_loss = tf.reduce_mean(losses)
                 avg_grads = self.manager.get_gradients_to_apply(d, gradient_state)
 
-                gradient_clip = None
+                gradient_clip = FLAGS.gradient_clip
                 learning_rate = self.model.initial_lr
 
                 if gradient_clip is not None:
@@ -416,7 +429,7 @@ class Trainer(object):
 
 def add_image_preprocessing(
                             input_nchan=3,
-                            image_size=32,
+                            image_size=28,
                             batch_size=32,
                             num_compute_devices=1,
                             input_data_type=tf.float32,
@@ -467,3 +480,56 @@ def create_config_proto():
     # config.gpu_options.force_gpu_compatible = FLAGS.force_gpu_compatible
     # config.gpu_options.force_gpu_compatible = True
     return config
+
+
+def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
+                       trace_filename, summary_op=None):
+    """Advance one step of benchmarking."""
+    if trace_filename is not None and step == -1:
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+    else:
+        run_options = None
+        run_metadata = None
+    summary_str = None
+    start_time = time.time()
+    if summary_op is None:
+        results = sess.run(fetches, options=run_options,
+                           run_metadata=run_metadata)
+    else:
+        (results, summary_str) = sess.run(
+            [fetches, summary_op], options=run_options,
+            run_metadata=run_metadata)
+
+    if not FLAGS.forward_only:
+        lossval = results[1]
+    else:
+        lossval = 0.
+
+    train_time = time.time() - start_time
+    step_train_times.append(train_time)
+    if step >= 0 and (step == 0 or (step + 1) % FLAGS.display_every == 0):
+        log_fn('%i\t%s\t%.3f' % (
+            step + 1, get_perf_timing_str(batch_size, step_train_times),
+            lossval))
+    if trace_filename is not None and step == -1:
+        log_fn('Dumping trace to', trace_filename)
+        trace = timeline.Timeline(step_stats=run_metadata.step_stats)
+        with open(trace_filename, 'w') as trace_file:
+            trace_file.write(
+                trace.generate_chrome_trace_format(show_memory=True))
+    return summary_str
+
+
+def get_perf_timing_str(batch_size, step_train_times, scale=1):
+    times = np.array(step_train_times)
+    speeds = batch_size / times
+    speed_mean = scale * batch_size / np.mean(times)
+    if scale == 1:
+        speed_uncertainty = np.std(speeds) / np.sqrt(float(len(speeds)))
+        speed_madstd = 1.4826 * np.median(np.abs(speeds - np.median(speeds)))
+        speed_jitter = speed_madstd
+        return 'images/sec: {:.1f} +/- {:.1f} (jitter = {:.1f})'.format(
+            speed_mean, speed_uncertainty, speed_jitter)
+    else:
+        return 'images/sec: {:.1f}'.format(speed_mean)

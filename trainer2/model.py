@@ -1,7 +1,7 @@
 # Working example for my blog post at:
 # https://danijar.github.io/structuring-your-tensorflow-models
 import tensorflow as tf
-from trainer2.layer import Conv2dLayer, PoolLayer, AffineLayer
+from trainer2.layer import Conv2dLayer, PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
 
 
 class Model:
@@ -11,6 +11,7 @@ class Model:
         self.layers = layers
         self.train_epochs = train_epochs
         self.initial_lr = initial_lr
+        self.batch_size = 32
         self.activation = activation
         self.l2_loss = l2_loss
         self.__check_init()
@@ -40,10 +41,19 @@ class Model:
     @classmethod
     def trial(cls):
         layers = [
-            Conv2dLayer([5, 5, 3, 4], [4], 'conv_1', True),
+            Conv2dLayer2(3, 32, 5, 5, 'conv_1'),
             PoolLayer('pool_1'),
-            AffineLayer('fc_1', True),
-            AffineLayer('output', final_layer=True)
+            Conv2dLayer2(32, 64, 5, 5, 'conv_2'),
+            PoolLayer('pool_2'),
+            ReshapeLayer(output_shape=[-1, 64 * 7 * 7]),
+            AffineLayer('fc_1', 3136, 512),
+            AffineLayer('output', 512, 1001, final_layer=True)
         ]
-        print('Using trail model.')
         return cls(name='trial', layers=layers)
+
+# cnn.conv(32, 5, 5)
+#         cnn.mpool(2, 2)
+#         cnn.conv(64, 5, 5)
+#         cnn.mpool(2, 2)
+#         cnn.reshape([-1, 64 * 7 * 7])
+#         cnn.affine(512)
