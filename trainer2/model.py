@@ -36,7 +36,7 @@ class Model:
     def get_l2_losses(self):
         weights = []
         for layer in self.layers:
-            if isinstance(layer, (Conv2dLayer, AffineLayer)):
+            if isinstance(layer, (Conv2dLayer2, AffineLayer)):
                 weights.append(tf.nn.l2_loss(layer.weights))
         return self.l2_loss * sum(weights)
 

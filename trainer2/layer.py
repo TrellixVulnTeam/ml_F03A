@@ -1,18 +1,34 @@
+
 import numpy as np
 
 import tensorflow as tf
 from tensorflow.python.layers import convolutional as conv_layers
+from contextlib import ExitStack
 DEFAULT_PADDING = 'SAME'
 
 
-def define_scope(f):
+def doublewrap(f):
+    """
+    A decorator decorator, allowing to use the decorator to be used without
+    parentheses if not arguments are provided. All arguments must be optional.
+    """
+    def decorator(*args, **kwargs):
+        if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+            return f(args[0])
+        else:
+            return lambda wrapee: f(wrapee, *args, **kwargs)
+    return decorator
+
+
+@doublewrap
+def define_scope(f, set_scope=True):
 
     property_name = f.__name__
     attribute = '_' + property_name
 
     def decorator(self):
         if not hasattr(self, attribute) or getattr(self, attribute) is None:
-            with tf.variable_scope(self.name):
+            with tf.variable_scope(self.name) if set_scope else ExitStack():
                 setattr(self, attribute, f(self))
         return getattr(self, attribute)
 
@@ -108,7 +124,7 @@ class ReshapeLayer(Layer):
         super(ReshapeLayer, self).__init__(name)
         self.output_shape = (-1,) if output_shape is None else output_shape
 
-    @define_scope
+    @define_scope(set_scope=False)
     def outputs(self):
         return tf.reshape(self.inputs, self.output_shape)
 
@@ -122,7 +138,7 @@ class PoolLayer(Layer):
     def __init__(self, name):
         super(PoolLayer, self).__init__(name)
 
-    @define_scope
+    @define_scope(set_scope=False)
     def outputs(self):
         return tf.nn.max_pool(
             self.inputs,
@@ -142,8 +158,7 @@ class NormLayer(Layer):
         super(NormLayer, self).__init__(name)
 
     def outputs(self):
-        with tf.name_scope(self.name):
-            self._outputs = tf.nn.lrn(self.inputs, 4, bias=1.0, alpha=0.0001, beta=0.75, name=self.name)
+        return tf.nn.lrn(self.inputs, 4, bias=1.0, alpha=0.0001, beta=0.75, name=self.name)
 
 
 class DropoutLayer(Layer):
@@ -156,8 +171,7 @@ class DropoutLayer(Layer):
         self.keep_prob = keep_prob
 
     def outputs(self):
-        with tf.name_scope(self.name):
-            self._outputs = tf.nn.dropout(self.inputs, keep_prob=self.keep_prob, name=self.name)
+        return tf.nn.dropout(self.inputs, keep_prob=self.keep_prob, name=self.name)
 
 
 # LAYER HELPER METHODS

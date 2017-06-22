@@ -184,19 +184,19 @@ tf.flags.DEFINE_boolean(
 # OUTPUT: Summary and Save & load checkpoints.
 
 tf.flags.DEFINE_integer(
-    'summary_verbosity', 1,
+    'summary_verbosity', 0,
     'Verbosity level for summary ops. Pass 0 to disable both summaries'
     ' and checkpoints.'
 )
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 10,
+    'save_summaries_steps', 0,
     'How often to save summaries for trained models. Pass 0 to disable'
     ' summaries.'
 )
 
 tf.flags.DEFINE_integer(
-    'save_model_secs', 150,
+    'save_model_secs', 0,
     'How often to save trained models. Pass 0 to disable checkpoints'
 )
 
