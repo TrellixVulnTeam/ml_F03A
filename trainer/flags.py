@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 100,
+    'num_batches', 400,
     'number of batches to run, excluding warmup'
 )
 
