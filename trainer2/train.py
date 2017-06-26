@@ -13,6 +13,8 @@ from tensorflow.python.client import timeline
 from trainer2 import manager
 from trainer2 import flags
 from trainer2.global_step import GlobalStepWatcher
+from trainer2 import input
+from trainer2 import datasets
 FLAGS = flags.get_flags()
 log_fn = print
 
@@ -50,6 +52,8 @@ class Trainer(object):
         worker_prefix = ''
         self.cpu_device = '%s/cpu:0' % worker_prefix
         self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in range(FLAGS.num_gpus)]
+
+        self.dataset = datasets.ImgData(FLAGS.data_dir)
 
         self.devices = self.manager.get_devices()
         if self.job_name:
@@ -110,10 +114,8 @@ class Trainer(object):
 
             global_step_watcher = GlobalStepWatcher(
                 sess, global_step,
-                len(self.worker_hosts) * self.num_warmup_batches
-                + init_global_step,
-                len(self.worker_hosts) * (self.num_warmup_batches
-                                          + self.num_batches) - 1)
+                len(self.worker_hosts) * self.num_warmup_batches + init_global_step,
+                len(self.worker_hosts) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
 
             if self.graph_file is not None:
@@ -201,7 +203,7 @@ class Trainer(object):
             global_step = tf.contrib.framework.get_or_create_global_step()
 
         with tf.device(self.cpu_device):
-            nclass, images_splits, labels_splits = add_image_preprocessing()
+            nclass, images_splits, labels_splits = add_image_preprocessing(dataset=self.dataset)
 
         update_ops = None
 
@@ -261,6 +263,16 @@ class Trainer(object):
 
                 gradient_clip = FLAGS.gradient_clip
                 learning_rate = self.model.initial_lr
+
+                if self.dataset and FLAGS.num_epochs_per_decay > 0:
+                    num_batches_per_epoch = (
+                        self.dataset.num_examples_per_epoch() / self.batch_size)
+                    decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
+
+                    # Decay the learning rate exponentially based on the number of steps.
+                    learning_rate = tf.train.exponential_decay(
+                        FLAGS.learning_rate, global_step,
+                        decay_steps, FLAGS.learning_rate_decay_factor, staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [
@@ -428,39 +440,58 @@ class Trainer(object):
 
 
 def add_image_preprocessing(
+                            dataset=None,
                             input_nchan=3,
                             image_size=28,
                             batch_size=32,
                             num_compute_devices=1,
                             input_data_type=tf.float32,
+                            resize_method=FLAGS.resize_method,
+                            train=True
                             ):
-    """Add image Preprocessing ops to tf graph."""
-    nclass = 1001
-    input_shape = [batch_size, image_size, image_size, input_nchan]
-    images = tf.truncated_normal(
-        input_shape,
-        dtype=input_data_type,
-        stddev=1e-1,
-        name='synthetic_images')
-    labels = tf.random_uniform(
-        [batch_size],
-        minval=1,
-        maxval=nclass,
-        dtype=tf.int32,
-        name='synthetic_labels')
-    # Note: This results in a H2D copy, but no computation
-    # Note: This avoids recomputation of the random values, but still
-    #         results in a H2D copy.
-    images = tf.contrib.framework.local_variable(images, name='images')
-    labels = tf.contrib.framework.local_variable(labels, name='labels')
-    # Change to 0-based (don't use background class like Inception does)
-    labels -= 1
-    if num_compute_devices == 1:
-        images_splits = [images]
-        labels_splits = [labels]
+    if dataset is not None:
+        preproc_train = input.ImagePreprocessor(
+            image_size, image_size, batch_size,
+            num_compute_devices, input_data_type, train=train,
+            resize_method=resize_method)
+        if train:
+            subset = 'train'
+        else:
+            subset = 'validation'
+        images, labels = preproc_train.minibatch(dataset, subset=subset)
+        images_splits = images
+        labels_splits = labels
+        # Note: We force all datasets to 1000 to ensure even comparison
+        #         This works because we use sparse_softmax_cross_entropy
+        nclass = dataset.num_classes
     else:
-        images_splits = tf.split(images, num_compute_devices, 0)
-        labels_splits = tf.split(labels, num_compute_devices, 0)
+        """Add image Preprocessing ops to tf graph."""
+        nclass = 1001
+        input_shape = [batch_size, image_size, image_size, input_nchan]
+        images = tf.truncated_normal(
+            input_shape,
+            dtype=input_data_type,
+            stddev=1e-1,
+            name='synthetic_images')
+        labels = tf.random_uniform(
+            [batch_size],
+            minval=1,
+            maxval=nclass,
+            dtype=tf.int32,
+            name='synthetic_labels')
+        # Note: This results in a H2D copy, but no computation
+        # Note: This avoids recomputation of the random values, but still
+        #         results in a H2D copy.
+        images = tf.contrib.framework.local_variable(images, name='images')
+        labels = tf.contrib.framework.local_variable(labels, name='labels')
+        # Change to 0-based (don't use background class like Inception does)
+        labels -= 1
+        if num_compute_devices == 1:
+            images_splits = [images]
+            labels_splits = [labels]
+        else:
+            images_splits = tf.split(images, num_compute_devices, 0)
+            labels_splits = tf.split(labels, num_compute_devices, 0)
     return nclass, images_splits, labels_splits
 
 

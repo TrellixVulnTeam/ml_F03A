@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 100,
+    'num_batches', 10,
     'number of batches to run, excluding warmup'
 )
 
@@ -150,7 +150,7 @@ tf.flags.DEFINE_integer(
 #############
 
 tf.flags.DEFINE_string(
-    'data_dir', None,
+    'data_dir', '../data/img_data/output',
     'Path to dataset in TFRecord format. If not specified, synthetic data will'
     ' be used.'
 )

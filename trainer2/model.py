@@ -29,7 +29,7 @@ class Model:
             layer.activation = self.activation
             layer.inputs = next_inputs
             next_inputs = layer.outputs()
-            assert layer.outputs is not None
+            assert next_inputs is not None
 
         return next_inputs
 
