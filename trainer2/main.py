@@ -9,10 +9,14 @@ from trainer2.model import Model
 
 
 def main(_):
-    print('Init training...')
+
+    print('START MAIN')
+
     model = Model.trial()
     trainer = train.Trainer(model, task.Task())
     trainer.run()
+
+    print('END MAIN')
 
 
 if __name__ == '__main__':

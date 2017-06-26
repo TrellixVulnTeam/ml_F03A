@@ -357,7 +357,7 @@ class ImagePreprocessor(object):
             records = record_input.get_yield_op()
             records = tf.split(records, self.batch_size, 0)
             records = [tf.reshape(record, []) for record in records]
-            for i in xrange(self.batch_size):
+            for i in range(self.batch_size):
                 value = records[i]
                 image_buffer, label_index, bbox, _ = parse_example_proto(value)
                 image = self.preprocess(image_buffer, bbox, i % 4)
@@ -365,7 +365,7 @@ class ImagePreprocessor(object):
                 images[device_index].append(image)
                 labels[device_index].append(label_index)
             label_index_batch = [None] * self.device_count
-            for device_index in xrange(self.device_count):
+            for device_index in range(self.device_count):
                 images[device_index] = tf.parallel_stack(images[device_index])
                 label_index_batch[device_index] = tf.concat(labels[device_index], 0)
 

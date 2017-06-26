@@ -3,6 +3,7 @@ from __future__ import print_function
 import os
 import time
 
+import six
 import numpy as np
 import tensorflow as tf
 
@@ -15,8 +16,10 @@ from trainer2 import flags
 from trainer2.global_step import GlobalStepWatcher
 from trainer2 import input
 from trainer2 import datasets
+from trainer2 import util
 FLAGS = flags.get_flags()
 log_fn = print
+tf.logging.set_verbosity(tf.logging.DEBUG)
 
 
 class Trainer(object):
@@ -32,11 +35,10 @@ class Trainer(object):
         self.ps_hosts = FLAGS.ps_hosts.split(',')
         self.worker_hosts = FLAGS.worker_hosts.split(',')
 
-        autotune_threshold = FLAGS.autotune_threshold if (
-            FLAGS.autotune_threshold) else 1
+        autotune_threshold = FLAGS.autotune_threshold if FLAGS.autotune_threshold else 1
         min_autotune_warmup = 5 * autotune_threshold * autotune_threshold
-        self.num_warmup_batches = FLAGS.num_warmup_batches if (
-            FLAGS.num_warmup_batches) else max(10, min_autotune_warmup)
+        self.num_warmup_batches = FLAGS.num_warmup_batches if FLAGS.num_warmup_batches else max(10, min_autotune_warmup)
+
         self.graph_file = FLAGS.graph_file
         self.resize_method = FLAGS.resize_method
         self.sync_queue_counter = 0
@@ -49,11 +51,75 @@ class Trainer(object):
         self.sync_queue_devices = [self.param_server_device]
 
         self.job_name = FLAGS.job_name
-        worker_prefix = ''
+
+        if self.job_name:
+            self.task_index = FLAGS.task_index
+            self.cluster = tf.train.ClusterSpec({'ps': self.ps_hosts,
+                                                 'worker': self.worker_hosts})
+            self.server = None
+
+            if not self.server:
+                self.server = tf.train.Server(self.cluster, job_name=self.job_name,
+                                              task_index=self.task_index,
+                                              config=util.create_config_proto(),
+                                              protocol=FLAGS.server_protocol)
+            worker_prefix = '/job:worker/task:%s' % self.task_index
+            self.param_server_device = tf.train.replica_device_setter(
+                worker_device=worker_prefix + '/cpu:0', cluster=self.cluster)
+            # This device on which the queues for managing synchronization between
+            # servers should be stored.
+            num_ps = len(self.ps_hosts)
+            self.sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i
+                                       for i in range(num_ps)]
+        else:
+            self.task_index = 0
+            self.cluster = None
+            self.server = None
+            worker_prefix = ''
+            self.param_server_device = '/%s:0' % FLAGS.local_parameter_device
+            self.sync_queue_devices = [self.param_server_device]
+
         self.cpu_device = '%s/cpu:0' % worker_prefix
         self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in range(FLAGS.num_gpus)]
 
-        self.dataset = datasets.ImgData(FLAGS.data_dir)
+        if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
+            raise ValueError('staged_vars for now is only supported with '
+                             '--variable_update=parameter_server')
+
+        if FLAGS.variable_update == 'parameter_server':
+            if self.job_name:
+                if not FLAGS.staged_vars:
+                    self.manager = manager.VariableMgrDistributedFetchFromPS(
+                        self)
+                else:
+                    self.manager = (
+                        manager.VariableMgrDistributedFetchFromStagedPS(self))
+            else:
+                if not FLAGS.staged_vars:
+                    self.manager = manager.VariableMgrLocalFetchFromPS(self)
+                else:
+                    self.manager = manager.VariableMgrLocalFetchFromStagedPS(
+                        self)
+        elif FLAGS.variable_update == 'replicated':
+            if self.job_name:
+                raise ValueError('Invalid --variable_update in distributed mode: %s' %
+                                 FLAGS.variable_update)
+            self.manager = manager.VariableMgrLocalReplicated(
+                self, FLAGS.use_nccl)
+        elif FLAGS.variable_update == 'distributed_replicated':
+            if not self.job_name:
+                raise ValueError('Invalid --variable_update in local mode: %s' %
+                                 FLAGS.variable_update)
+            self.manager = manager.VariableMgrDistributedReplicated(self)
+        elif FLAGS.variable_update == 'independent':
+            if self.job_name:
+                raise ValueError('Invalid --variable_update in distributed mode: %s' %
+                                 FLAGS.variable_update)
+            self.manager = manager.VariableMgrIndependent(self)
+        else:
+            raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)
+
+        self.dataset = datasets.ImgData(FLAGS.data_dir) if FLAGS.data_dir is not None else None
 
         self.devices = self.manager.get_devices()
         if self.job_name:
@@ -102,7 +168,9 @@ class Trainer(object):
 
         step_train_times = []
         with sv.managed_session(
-                master='', config=create_config_proto(), start_standard_services=FLAGS.summary_verbosity > 0) as sess:
+                master=self.server.target if self.server else '',
+                config=util.create_config_proto(),
+                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
 
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
@@ -134,6 +202,7 @@ class Trainer(object):
                 done_fn = lambda: local_step == self.num_batches
             else:
                 done_fn = lambda: global_step_watcher.done()
+
             while not done_fn():
                 if local_step == 0:
                     log_fn('Done warm up')
@@ -153,6 +222,7 @@ class Trainer(object):
                     sess, fetches, local_step, self.batch_size,
                     step_train_times,
                     self.trace_filename, fetch_summary)
+
                 if summary_str is not None and is_chief:
                     sv.summary_computed(sess, summary_str)
                 local_step += 1
@@ -179,8 +249,10 @@ class Trainer(object):
 
     def build_graph(self):
 
+        print('Building graph')
+
         phase_train = not (FLAGS.eval or FLAGS.forward_only)
-        use_synthetic_gpu_images = True
+        use_synthetic_gpu_images = (self.dataset is None)
 
         data_type = tf.float32
         input_data_type = tf.float32
@@ -203,9 +275,17 @@ class Trainer(object):
             global_step = tf.contrib.framework.get_or_create_global_step()
 
         with tf.device(self.cpu_device):
-            nclass, images_splits, labels_splits = add_image_preprocessing(dataset=self.dataset)
+            nclass, images_splits, labels_splits = add_image_preprocessing(
+                dataset=self.dataset,
+                input_nchan=input_nchan,
+                image_size=28,
+                batch_size=self.batch_size,
+                num_compute_devices=len(self.devices),
+                input_data_type=tf.float32
+            )
 
         update_ops = None
+        staging_delta_ops = []
 
         for dev in range(len(self.devices)):
             with self.manager.create_outer_variable_scope(dev), tf.name_scope('tower_%i' % dev) as name_scope:
@@ -234,6 +314,12 @@ class Trainer(object):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
 
         enqueue_ops.append(tf.group(*gpu_copy_stage_ops))
+
+        if self.manager.supports_staged_vars():
+            for staging_ops in self.manager.staging_vars_on_devices:
+                gpu_compute_stage_ops.extend(
+                    [put_op for _, (put_op, _) in six.iteritems(staging_ops)])
+
         enqueue_ops.append(tf.group(*gpu_compute_stage_ops))
 
         if gpu_grad_stage_ops:
@@ -249,7 +335,7 @@ class Trainer(object):
                 all_top_1_ops = tf.reduce_sum(all_top_1_ops)
                 all_top_5_ops = tf.reduce_sum(all_top_5_ops)
                 fetches = [all_top_1_ops, all_top_5_ops] + enqueue_ops
-            return (enqueue_ops, fetches)
+            return enqueue_ops, fetches
 
         extra_nccl_ops = []
         apply_gradient_devices, gradient_state = (
@@ -297,6 +383,7 @@ class Trainer(object):
                 for var in tf.trainable_variables():
                     tf.summary.histogram(var.op.name, var)
         fetches = [train_op, total_loss] + enqueue_ops
+        print('BUILT GRAPH')
         return enqueue_ops, fetches
 
     def add_forward_pass_and_gradients(
@@ -449,6 +536,7 @@ def add_image_preprocessing(
                             resize_method=FLAGS.resize_method,
                             train=True
                             ):
+    print('add_image_preprocessing')
     if dataset is not None:
         preproc_train = input.ImagePreprocessor(
             image_size, image_size, batch_size,
@@ -463,7 +551,8 @@ def add_image_preprocessing(
         labels_splits = labels
         # Note: We force all datasets to 1000 to ensure even comparison
         #         This works because we use sparse_softmax_cross_entropy
-        nclass = dataset.num_classes
+        # nclass = dataset.num_classes
+        nclass = 1001
     else:
         """Add image Preprocessing ops to tf graph."""
         nclass = 1001
@@ -492,6 +581,8 @@ def add_image_preprocessing(
         else:
             images_splits = tf.split(images, num_compute_devices, 0)
             labels_splits = tf.split(labels, num_compute_devices, 0)
+
+    print('Preprocessing done.')
     return nclass, images_splits, labels_splits
 
 
@@ -501,16 +592,6 @@ def loss_function(logits, labels):
         logits=logits, labels=labels, name='xentropy')
     loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     return loss
-
-
-def create_config_proto():
-    config = tf.ConfigProto()
-    config.allow_soft_placement = True
-    config.intra_op_parallelism_threads = FLAGS.num_intra_threads
-    config.inter_op_parallelism_threads = FLAGS.num_inter_threads
-    # config.gpu_options.force_gpu_compatible = FLAGS.force_gpu_compatible
-    # config.gpu_options.force_gpu_compatible = True
-    return config
 
 
 def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
@@ -524,6 +605,7 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
         run_metadata = None
     summary_str = None
     start_time = time.time()
+
     if summary_op is None:
         results = sess.run(fetches, options=run_options,
                            run_metadata=run_metadata)
@@ -531,7 +613,6 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
         (results, summary_str) = sess.run(
             [fetches, summary_op], options=run_options,
             run_metadata=run_metadata)
-
     if not FLAGS.forward_only:
         lossval = results[1]
     else:

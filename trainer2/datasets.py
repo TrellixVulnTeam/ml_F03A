@@ -45,8 +45,8 @@ class Dataset(object):
     def num_examples_per_epoch(self, subset):
         pass
 
-    def __str__(self):
-        return self.name
+    def __repr__(self):
+        return '{self.__class__.__name__}: {self.name}'.format(self=self)
 
 
 class ImgData(Dataset):
@@ -54,13 +54,13 @@ class ImgData(Dataset):
         super(ImgData, self).__init__('image-net', data_dir)
 
     def num_classes(self):
-        return 2
+        return 3
 
-    def num_examples_per_epoch(self, subset):
+    def num_examples_per_epoch(self, subset='train'):
         if subset == 'train':
-            return 1164+1143
+            return 1164+1143+1190
         elif subset == 'validation':
-            return 140+132
+            return 140+132+147
         else:
             raise ValueError('Invalid data subset "%s"' % subset)
 

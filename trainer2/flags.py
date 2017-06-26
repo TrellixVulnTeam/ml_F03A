@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 10,
+    'num_batches', 20,
     'number of batches to run, excluding warmup'
 )
 
@@ -129,7 +129,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'display_every', 10,
+    'display_every', 1,
     'Number of local steps after which progress is printed out'
 )
 
@@ -151,9 +151,10 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_string(
     'data_dir', '../data/img_data/output',
-    'Path to dataset in TFRecord format. If not specified, synthetic data will'
-    ' be used.'
+    # 'data_dir', None,
+    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
+
 tf.flags.DEFINE_string(
     'data_name', None,
     'Name of dataset: imagenet or flowers. If not specified, it is'
