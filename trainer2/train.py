@@ -552,7 +552,7 @@ def add_image_preprocessing(
         # Note: We force all datasets to 1000 to ensure even comparison
         #         This works because we use sparse_softmax_cross_entropy
         # nclass = dataset.num_classes
-        nclass = 1001
+        nclass = 4
     else:
         """Add image Preprocessing ops to tf graph."""
         nclass = 1001

@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 20,
+    'num_batches', 10,
     'number of batches to run, excluding warmup'
 )
 
@@ -129,7 +129,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'display_every', 1,
+    'display_every', 2,
     'Number of local steps after which progress is printed out'
 )
 
@@ -185,19 +185,19 @@ tf.flags.DEFINE_boolean(
 # OUTPUT: Summary and Save & load checkpoints.
 
 tf.flags.DEFINE_integer(
-    'summary_verbosity', 0,
+    'summary_verbosity', 1,
     'Verbosity level for summary ops. Pass 0 to disable both summaries'
     ' and checkpoints.'
 )
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 0,
+    'save_summaries_steps', 50,
     'How often to save summaries for trained models. Pass 0 to disable'
     ' summaries.'
 )
 
 tf.flags.DEFINE_integer(
-    'save_model_secs', 0,
+    'save_model_secs', 100,
     'How often to save trained models. Pass 0 to disable checkpoints'
 )
 
