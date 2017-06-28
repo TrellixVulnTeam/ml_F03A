@@ -169,20 +169,20 @@ def ProcessXMLAnnotation(xml_file):
     return boxes
 
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print('Invalid usage\n'
-              'usage: process_bounding_boxes.py <dir> [synsets-file]',
-              file=sys.stderr)
-        sys.exit(-1)
+def run(argv):
 
-    xml_files = glob.glob(sys.argv[1] + '/*/*.xml')
-    print('Identified %d XML files in %s' % (len(xml_files), sys.argv[1]),
-          file=sys.stderr)
+    # if len(argv) < 2 or len(argv) > 3:
+    #     print('Invalid usage\n'
+    #           'usage: process_bounding_boxes.py <dir> [synsets-file]',
+    #           file=sys.stderr)
+    #     sys.exit(-1)
 
-    if len(sys.argv) == 3:
-        labels = set([l.strip() for l in open(sys.argv[2]).readlines()])
-        print('Identified %d synset IDs in %s' % (len(labels), sys.argv[2]),
+    xml_files = glob.glob(argv[0] + '/*/*.xml')
+    print('Identified %d XML files in %s' % (len(xml_files), argv[0]), file=sys.stderr)
+
+    if len(argv) == 2:
+        labels = set([l.strip() for l in open(argv[1]).readlines()])
+        print('Identified %d synset IDs in %s' % (len(labels), argv[1]),
               file=sys.stderr)
     else:
         labels = None
@@ -228,10 +228,10 @@ if __name__ == '__main__':
                 # Note bbox.filename occasionally contains '%s' in the name. This is
                 # data set noise that is fixed by just using the basename of the XML file.
                 image_filename = os.path.splitext(os.path.basename(one_file))[0]
-                print('%s.JPEG,%.4f,%.4f,%.4f,%.4f' %
-                      (image_filename,
-                       bbox.xmin_scaled, bbox.ymin_scaled,
-                       bbox.xmax_scaled, bbox.ymax_scaled))
+                # print('%s.JPEG,%.4f,%.4f,%.4f,%.4f' %
+                #       (image_filename,
+                #        bbox.xmin_scaled, bbox.ymin_scaled,
+                #        bbox.xmax_scaled, bbox.ymax_scaled))
 
                 bb_writer.writerow([
                     '%s.JPEG' % image_filename,
@@ -264,3 +264,7 @@ if __name__ == '__main__':
           (saved_boxes, saved_files),
           file=sys.stderr)
     print('Finished.', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    run(sys.argv)

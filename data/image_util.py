@@ -22,6 +22,87 @@ import tensorflow as tf
 from data.image_coder import ImageCoder
 
 
+def _build_synset_lookup(imagenet_metadata_file, u_labels):
+    """Build lookup for synset to human-readable label.
+
+    Args:
+      imagenet_metadata_file: string, path to file containing mapping from
+        synset to human-readable label.
+
+        Assumes each line of the file looks like:
+
+          n02119247    black fox
+          n02119359    silver fox
+          n02119477    red fox, Vulpes fulva
+
+        where each line corresponds to a unique mapping. Note that each line is
+        formatted as <synset>\t<human readable label>.
+
+    Returns:
+      Dictionary of synset to human labels, such as:
+        'n02119022' --> 'red fox, Vulpes vulpes'
+    """
+    lines = tf.gfile.FastGFile(imagenet_metadata_file, 'r').readlines()
+    synset_to_human = {}
+    for l in lines:
+        if l:
+            parts = l.strip().split('\t')
+            assert len(parts) == 2
+            synset = parts[0]
+            if synset in u_labels:
+                human = parts[1]
+                synset_to_human[synset] = human
+    return synset_to_human
+
+
+def _build_bounding_box_lookup(bounding_box_file):
+    """Build a lookup from image file to bounding boxes.
+
+    Args:
+      bounding_box_file: string, path to file with bounding boxes annotations.
+
+        Assumes each line of the file looks like:
+
+          n00007846_64193.JPEG,0.0060,0.2620,0.7545,0.9940
+
+        where each line corresponds to one bounding box annotation associated
+        with an image. Each line can be parsed as:
+
+          <JPEG file name>, <xmin>, <ymin>, <xmax>, <ymax>
+
+        Note that there might exist mulitple bounding box annotations associated
+        with an image file. This file is the output of process_bounding_boxes.py.
+
+    Returns:
+      Dictionary mapping image file names to a list of bounding boxes. This list
+      contains 0+ bounding boxes.
+    """
+    lines = tf.gfile.FastGFile(bounding_box_file, 'r').readlines()
+    images_to_bboxes = {}
+    num_bbox = 0
+    num_image = 0
+    for l in lines:
+        if l:
+            parts = l.split(',')
+            assert len(parts) == 5, ('Failed to parse: %s' % l)
+            filename = parts[0]
+            xmin = float(parts[1])
+            ymin = float(parts[2])
+            xmax = float(parts[3])
+            ymax = float(parts[4])
+            box = [xmin, ymin, xmax, ymax]
+
+            if filename not in images_to_bboxes:
+                images_to_bboxes[filename] = []
+                num_image += 1
+            images_to_bboxes[filename].append(box)
+            num_bbox += 1
+
+    print('Successfully read %d bounding boxes '
+          'across %d images.' % (num_bbox, num_image))
+    return images_to_bboxes
+
+
 def _int64_feature(value):
     """Wrapper for inserting int64 features into Example proto."""
     if not isinstance(value, list):
@@ -110,7 +191,7 @@ def _process_image(filename, coder):
 
 
 def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
-                               texts, labels, num_shards):
+                               texts, labels, num_shards, output_dir):
     """Processes and saves list of images as TFRecord in 1 thread.
 
     Args:
@@ -141,7 +222,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
         # Generate a sharded version of the file name, e.g. 'train-00002-of-00010'
         shard = thread_index * num_shards_per_batch + s
         output_filename = '%s-%.5d-of-%.5d' % (name, shard, num_shards)
-        output_file = os.path.join(FLAGS.output_directory, output_filename)
+        output_file = os.path.join(output_dir, output_filename)
         writer = tf.python_io.TFRecordWriter(output_file)
 
         shard_counter = 0
@@ -194,6 +275,7 @@ def process_image_files(dataset, num_threads):
     texts = dataset.classnames
     labels = dataset.labels
     num_shards = dataset.num_shards
+    output_dir = dataset.output_dir
 
     assert len(filenames) == len(texts)
     assert len(filenames) == len(labels)
@@ -217,7 +299,7 @@ def process_image_files(dataset, num_threads):
     threads = []
     for thread_index in range(len(ranges)):
         args = (coder, thread_index, ranges, name, filenames,
-                texts, labels, num_shards)
+                texts, labels, num_shards, output_dir)
         t = threading.Thread(target=_process_image_files_batch, args=args)
         t.start()
         threads.append(t)
@@ -227,3 +309,9 @@ def process_image_files(dataset, num_threads):
     print('%s: Finished writing all %d images in data set.' %
           (datetime.now(), len(filenames)))
     sys.stdout.flush()
+
+
+def build_lookups(imagenet_metadata_file, bounding_box_file, u_labels):
+    synset_to_human = _build_synset_lookup(imagenet_metadata_file, u_labels)
+    image_to_bboxes = _build_bounding_box_lookup(bounding_box_file)
+    return synset_to_human, image_to_bboxes
