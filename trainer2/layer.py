@@ -44,6 +44,7 @@ class Layer(object):
         self.inputs = None
         self._outputs = None
         self.activation = tf.nn.relu
+        self.data_type = tf.float32
 
     def outputs(self):
         pass
@@ -57,14 +58,13 @@ class Conv2dLayer2(Layer):
     Layer implementing a 2D convolution-based transformation of its inputs.
     """
 
-    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name, data_format='NHWC', data_type=tf.float32):
+    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name, data_format='NHWC'):
         super(Conv2dLayer2, self).__init__(name)
         self.num_input_channels = num_input_channels
         self.num_output_channels = num_output_channels
         self.kernel_dim_1 = kernel_dim_1
         self.kernel_dim_2 = kernel_dim_2
         self.data_format = data_format
-        self.data_type = data_type
 
     @define_scope
     def outputs(self):
@@ -73,7 +73,7 @@ class Conv2dLayer2(Layer):
             self.inputs,
             self.num_output_channels,
             [self.kernel_dim_1, self.kernel_dim_2],
-            padding='SAME',
+            padding=DEFAULT_PADDING,
             use_bias=False,
             data_format='channels_last'
         )
@@ -103,14 +103,10 @@ class AffineLayer(Layer):
         self.weights = tf.get_variable(
             'weights',
             [self.num_channels_in, self.num_channels_out],
-            tf.float32,
+            self.data_type,
             tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in))
         )
-        biases = tf.get_variable('biases', [self.num_channels_out],
-                                 tf.float32,
-                                 tf.constant_initializer(0.0))
-        # self.weights = _weights([input_dim, output_dim])
-        # biases = tf.Variable(tf.zeros([output_dim]), name='biases')
+        biases = tf.get_variable('biases', [self.num_channels_out], self.data_type, tf.constant_initializer(0.0))
 
         if self.final_layer:
             return tf.add(tf.matmul(self.inputs, self.weights), biases)
@@ -144,7 +140,7 @@ class PoolLayer(Layer):
             self.inputs,
             ksize=[1, 2, 2, 1],
             strides=[1, 2, 2, 1],
-            padding='VALID',
+            padding=DEFAULT_PADDING,
             name=self.name)
 
 

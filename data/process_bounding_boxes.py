@@ -149,11 +149,6 @@ def ProcessXMLAnnotation(xml_file):
         ymin = float(box.ymin) / float(box.height)
         ymax = float(box.ymax) / float(box.height)
 
-        # Some images contain bounding box annotations that
-        # extend outside of the supplied image. See, e.g.
-        # n03127925/n03127925_147.xml
-        # Additionally, for some bounding boxes, the min > max
-        # or the box is entirely outside of the image.
         min_x = min(xmin, xmax)
         max_x = max(xmin, xmax)
         box.xmin_scaled = min(max(min_x, 0.0), 1.0)
@@ -169,36 +164,27 @@ def ProcessXMLAnnotation(xml_file):
     return boxes
 
 
-def run(argv):
+def run(labels_dir, labels_file, bounding_box_file):
 
-    # if len(argv) < 2 or len(argv) > 3:
-    #     print('Invalid usage\n'
-    #           'usage: process_bounding_boxes.py <dir> [synsets-file]',
-    #           file=sys.stderr)
-    #     sys.exit(-1)
+    xml_files = glob.glob(labels_dir + '/*/*.xml')
+    print('Identified %d XML files in %s' % (len(xml_files), labels_dir), file=sys.stderr)
 
-    xml_files = glob.glob(argv[0] + '/*/*.xml')
-    print('Identified %d XML files in %s' % (len(xml_files), argv[0]), file=sys.stderr)
-
-    if len(argv) == 2:
-        labels = set([l.strip() for l in open(argv[1]).readlines()])
-        print('Identified %d synset IDs in %s' % (len(labels), argv[1]),
-              file=sys.stderr)
-    else:
-        labels = None
+    labels = set([l.strip() for l in open(labels_file).readlines()])
+    print('Identified %d synset IDs in %s' % (len(labels), labels_file), file=sys.stderr)
+    assert labels is not None and len(labels) > 1
 
     skipped_boxes = 0
     skipped_files = 0
     saved_boxes = 0
     saved_files = 0
-    with open('bounding_boxes.csv', 'w', newline='') as csvfile:
+
+    with open(bounding_box_file, 'w', newline='') as csvfile:
         bb_writer = csv.writer(csvfile)
         for file_index, one_file in enumerate(xml_files):
-            # Example: <...>/n06470073/n00141669_6790.xml
-            label = os.path.basename(os.path.dirname(one_file))
 
+            label = os.path.basename(os.path.dirname(one_file))
             # Determine if the annotation is from an ImageNet Challenge label.
-            if labels is not None and label not in labels:
+            if label not in labels:
                 skipped_files += 1
                 continue
 
@@ -207,38 +193,20 @@ def run(argv):
 
             found_box = False
             for bbox in bboxes:
-                if labels is not None:
-                    if bbox.label != label:
-                        # Note: There is a slight bug in the bounding box annotation data.
-                        # Many of the dog labels have the human label 'Scottish_deerhound'
-                        # instead of the synset ID 'n02092002' in the bbox.label field. As a
-                        # simple hack to overcome this issue, we only exclude bbox labels
-                        # *which are synset ID's* that do not match original synset label for
-                        # the XML file.
-                        if bbox.label in labels:
-                            skipped_boxes += 1
-                            continue
-
-                # Guard against improperly specified boxes.
-                if (bbox.xmin_scaled >= bbox.xmax_scaled or
-                            bbox.ymin_scaled >= bbox.ymax_scaled):
+                if bbox.label != label:
                     skipped_boxes += 1
                     continue
 
-                # Note bbox.filename occasionally contains '%s' in the name. This is
-                # data set noise that is fixed by just using the basename of the XML file.
-                image_filename = os.path.splitext(os.path.basename(one_file))[0]
-                # print('%s.JPEG,%.4f,%.4f,%.4f,%.4f' %
-                #       (image_filename,
-                #        bbox.xmin_scaled, bbox.ymin_scaled,
-                #        bbox.xmax_scaled, bbox.ymax_scaled))
+                # Guard against improperly specified boxes.
+                if bbox.xmin_scaled >= bbox.xmax_scaled or bbox.ymin_scaled >= bbox.ymax_scaled:
+                    skipped_boxes += 1
+                    continue
 
-                bb_writer.writerow([
-                    '%s.JPEG' % image_filename,
-                    '%.4f' % bbox.xmin_scaled,
-                    '%.4f' % bbox.ymin_scaled,
-                    '%.4f' % bbox.xmax_scaled,
-                    '%.4f' % bbox.ymax_scaled]
+                image_filename = os.path.splitext(os.path.basename(one_file))[0]
+
+                bb_writer.writerow(
+                    ['%s.JPEG' % image_filename, '%.4f' % bbox.xmin_scaled,
+                     '%.4f' % bbox.ymin_scaled, '%.4f' % bbox.xmax_scaled, '%.4f' % bbox.ymax_scaled]
                 )
 
                 saved_boxes += 1
@@ -248,22 +216,10 @@ def run(argv):
             else:
                 skipped_files += 1
 
-            if not file_index % 5000:
-                print('--> processed %d of %d XML files.' %
-                      (file_index + 1, len(xml_files)),
-                      file=sys.stderr)
-                print('--> skipped %d boxes and %d XML files.' %
-                      (skipped_boxes, skipped_files), file=sys.stderr)
-
-    print('Finished processing %d XML files.' % len(xml_files), file=sys.stderr)
-    print('Skipped %d XML files not in ImageNet Challenge.' % skipped_files,
-          file=sys.stderr)
-    print('Skipped %d bounding boxes not in ImageNet Challenge.' % skipped_boxes,
-          file=sys.stderr)
-    print('Wrote %d bounding boxes from %d annotated images.' %
-          (saved_boxes, saved_files),
-          file=sys.stderr)
-    print('Finished.', file=sys.stderr)
+    print('Finished processing %d XML files.' % len(xml_files))
+    print('Skipped %d XML files not in ImageNet Challenge.' % skipped_files)
+    print('Skipped %d bounding boxes.' % skipped_boxes)
+    print('Wrote %d bounding boxes from %d annotated images.' % (saved_boxes, saved_files))
 
 
 if __name__ == '__main__':

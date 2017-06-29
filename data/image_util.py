@@ -110,24 +110,46 @@ def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
 
+def _float_feature(value):
+    """Wrapper for inserting float features into Example proto."""
+    if not isinstance(value, list):
+        value = [value]
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+
+
 def _bytes_feature(value):
     """Wrapper for inserting bytes features into Example proto."""
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def _convert_to_example(filename, image_buffer, label, text, height, width):
+def _convert_to_example(filename, image_buffer, label, synset, human, bbox,
+                        height, width):
     """Build an Example proto for an example.
 
     Args:
       filename: string, path to an image file, e.g., '/path/to/example.JPG'
       image_buffer: string, JPEG encoding of RGB image
       label: integer, identifier for the ground truth for the network
-      text: string, unique human-readable, e.g. 'dog'
+      synset: string, unique WordNet ID specifying the label, e.g., 'n02323233'
+      human: string, human-readable label, e.g., 'red fox, Vulpes vulpes'
+      bbox: list of bounding boxes; each box is a list of integers
+        specifying [xmin, ymin, xmax, ymax]. All boxes are assumed to belong to
+        the same label as the image label.
       height: integer, image height in pixels
       width: integer, image width in pixels
     Returns:
       Example proto
     """
+
+    xmin = []
+    ymin = []
+    xmax = []
+    ymax = []
+
+    for b in bbox:
+        assert len(b) == 4
+        # pylint: disable=expression-not-assigned
+        [l.append(point) for l, point in zip([xmin, ymin, xmax, ymax], b)]
 
     colorspace = 'RGB'
     channels = 3
@@ -139,7 +161,13 @@ def _convert_to_example(filename, image_buffer, label, text, height, width):
         'image/colorspace': _bytes_feature(tf.compat.as_bytes(colorspace)),
         'image/channels': _int64_feature(channels),
         'image/class/label': _int64_feature(label),
-        'image/class/text': _bytes_feature(tf.compat.as_bytes(text)),
+        'image/class/synset': _bytes_feature(tf.compat.as_bytes(synset)),
+        'image/class/text': _bytes_feature(tf.compat.as_bytes(human)),
+        'image/object/bbox/xmin': _float_feature(xmin),
+        'image/object/bbox/xmax': _float_feature(xmax),
+        'image/object/bbox/ymin': _float_feature(ymin),
+        'image/object/bbox/ymax': _float_feature(ymax),
+        'image/object/bbox/label': _int64_feature([label] * len(xmin)),
         'image/format': _bytes_feature(tf.compat.as_bytes(image_format)),
         'image/filename': _bytes_feature(tf.compat.as_bytes(os.path.basename(filename))),
         'image/encoded': _bytes_feature(tf.compat.as_bytes(image_buffer))}))
@@ -190,8 +218,7 @@ def _process_image(filename, coder):
     return image_data, height, width
 
 
-def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
-                               texts, labels, num_shards, output_dir):
+def _process_image_files_batch(coder, thread_index, ranges, dataset):
     """Processes and saves list of images as TFRecord in 1 thread.
 
     Args:
@@ -208,13 +235,21 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
     # Each thread produces N shards where N = int(num_shards / num_threads).
     # For instance, if num_shards = 128, and the num_threads = 2, then the first
     # thread would produce shards [0, 64).
+
+    name = dataset.name
+    filenames = dataset.filenames
+    texts = dataset.classnames
+    labels = dataset.labels
+    num_shards = dataset.num_shards
+    output_dir = dataset.output_dir
+    bboxes = dataset.bboxes
+    humans = dataset.human_classnames
+
     num_threads = len(ranges)
     assert not num_shards % num_threads
     num_shards_per_batch = int(num_shards / num_threads)
 
-    shard_ranges = np.linspace(ranges[thread_index][0],
-                               ranges[thread_index][1],
-                               num_shards_per_batch + 1).astype(int)
+    shard_ranges = np.linspace(ranges[thread_index][0], ranges[thread_index][1], num_shards_per_batch + 1).astype(int)
     num_files_in_thread = ranges[thread_index][1] - ranges[thread_index][0]
 
     counter = 0
@@ -231,6 +266,8 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
             filename = filenames[i]
             label = labels[i]
             text = texts[i]
+            human = humans[i]
+            bbox = bboxes[i]
 
             try:
                 image_buffer, height, width = _process_image(filename, coder)
@@ -240,7 +277,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
                 continue
 
             example = _convert_to_example(filename, image_buffer, label,
-                                          text, height, width)
+                                          text, human, bbox, height, width)
             writer.write(example.SerializeToString())
             shard_counter += 1
             counter += 1
@@ -251,12 +288,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
                 sys.stdout.flush()
 
         writer.close()
-        print('%s [thread %d]: Wrote %d images to %s' %
-              (datetime.now(), thread_index, shard_counter, output_file))
         sys.stdout.flush()
-        shard_counter = 0
-    print('%s [thread %d]: Wrote %d images to %d shards.' %
-          (datetime.now(), thread_index, counter, num_files_in_thread))
     sys.stdout.flush()
 
 
@@ -270,15 +302,14 @@ def process_image_files(dataset, num_threads):
       labels: list of integer; each integer identifies the ground truth
       num_shards: integer number of shards for this data set.
     """
-    name = dataset.name
     filenames = dataset.filenames
     texts = dataset.classnames
     labels = dataset.labels
-    num_shards = dataset.num_shards
-    output_dir = dataset.output_dir
 
     assert len(filenames) == len(texts)
     assert len(filenames) == len(labels)
+
+    os.makedirs('{}'.format(dataset.output_dir), exist_ok=True)
 
     # Break all images into batches with a [ranges[i][0], ranges[i][1]].
     spacing = np.linspace(0, len(filenames), num_threads + 1).astype(np.int)
@@ -298,16 +329,14 @@ def process_image_files(dataset, num_threads):
 
     threads = []
     for thread_index in range(len(ranges)):
-        args = (coder, thread_index, ranges, name, filenames,
-                texts, labels, num_shards, output_dir)
+        args = (coder, thread_index, ranges, dataset)
         t = threading.Thread(target=_process_image_files_batch, args=args)
         t.start()
         threads.append(t)
 
     # Wait for all the threads to terminate.
     coord.join(threads)
-    print('%s: Finished writing all %d images in data set.' %
-          (datetime.now(), len(filenames)))
+    print('%s: Finished writing all %d images in data set.' % (datetime.now(), len(filenames)))
     sys.stdout.flush()
 
 

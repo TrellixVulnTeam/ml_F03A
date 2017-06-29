@@ -59,12 +59,9 @@ def parse_example_proto(example_serialized):
     """
     # Dense features in Example proto.
     feature_map = {
-        'image/encoded': tf.FixedLenFeature([], dtype=tf.string,
-                                            default_value=''),
-        'image/class/label': tf.FixedLenFeature([1], dtype=tf.int64,
-                                                default_value=-1),
-        'image/class/text': tf.FixedLenFeature([], dtype=tf.string,
-                                               default_value=''),
+        'image/encoded': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
+        'image/class/label': tf.FixedLenFeature([1], dtype=tf.int64, default_value=-1),
+        'image/class/text': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
     }
     sparse_float32 = tf.VarLenFeature(dtype=tf.float32)
     # Sparse features in Example proto.
@@ -72,7 +69,8 @@ def parse_example_proto(example_serialized):
         {k: sparse_float32 for k in ['image/object/bbox/xmin',
                                      'image/object/bbox/ymin',
                                      'image/object/bbox/xmax',
-                                     'image/object/bbox/ymax']})
+                                     'image/object/bbox/ymax']
+         })
 
     features = tf.parse_single_example(example_serialized, feature_map)
     label = tf.cast(features['image/class/label'], dtype=tf.int32)
@@ -102,19 +100,12 @@ def decode_jpeg(image_buffer, scope=None):  # , dtype=tf.float32):
     Returns:
       3-D float Tensor with values ranging from [0, 1).
     """
-    # with tf.op_scope([image_buffer], scope, 'decode_jpeg'):
-    # with tf.name_scope(scope, 'decode_jpeg', [image_buffer]):
     with tf.name_scope(scope or 'decode_jpeg'):
         # Decode the string as an RGB JPEG.
         # Note that the resulting image contains an unknown height and width
         # that is set dynamically by decode_jpeg. In other words, the height
         # and width of image is unknown at compile-time.
-        image = tf.image.decode_jpeg(image_buffer, channels=3,
-                                     fancy_upscaling=False,
-                                     dct_method='INTEGER_FAST')
-
-        # image = tf.Print(image, [tf.shape(image)], 'Image shape: ')
-
+        image = tf.image.decode_jpeg(image_buffer, channels=3, fancy_upscaling=False, dct_method='INTEGER_FAST')
         return image
 
 
@@ -156,14 +147,11 @@ def eval_image(image, height, width, bbox, thread_id, resize):
             }[resize]
             # This resizing operation may distort the images because the aspect
             # ratio is not respected.
-            distorted_image = tf.image.resize_images(
-                distorted_image, [height, width],
-                resize_method,
-                align_corners=False)
+            distorted_image = tf.image.resize_images(distorted_image, [height, width],
+                                                     resize_method, align_corners=False)
         distorted_image.set_shape([height, width, 3])
         if not thread_id:
-            tf.summary.image(
-                'cropped_resized_image', tf.expand_dims(distorted_image, 0))
+            tf.summary.image('cropped_resized_image', tf.expand_dims(distorted_image, 0))
         image = distorted_image
     return image
 
@@ -174,6 +162,20 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
     Distorting images provides a useful technique for augmenting the data
     set during training in order to make the network invariant to aspects
     of the image that do not effect the label.
+
+    bounding_boxes: A `Tensor` of type `float32`.
+      3-D with shape `[batch, N, 4]` describing the N bounding boxes associated with the image.
+    min_object_covered: An optional `float`. Defaults to `0.1`.
+      The cropped area of the image must contain at least this
+      fraction of any bounding box supplied. The value of this parameter should be
+      non-negative. In the case of 0, the cropped area does not need to overlap
+      any of the bounding boxes supplied.
+    aspect_ratio_range: An optional list of `floats`. Defaults to `[0.75, 1.33]`.
+      The cropped area of the image must have an aspect ratio =
+      width / height within this range.
+    area_range: An optional list of `floats`. Defaults to `[0.05, 1]`.
+      The cropped area of the image must contain a fraction of the
+      supplied image within in this range.
 
     Args:
       image: 3-D float Tensor of image
@@ -187,8 +189,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
     Returns:
       3-D float Tensor of distorted image used for training.
     """
-    # with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):
-    # with tf.name_scope(scope, 'distort_image', [image, height, width, bbox]):
+
     with tf.name_scope(scope or 'distort_image'):
         # Each bounding box has shape [1, num_boxes, box coords] and
         # the coordinates are ordered [ymin, xmin, ymax, xmax].
@@ -200,10 +201,8 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
 
         # Display the bounding box in the first thread only.
         if not thread_id:
-            image_with_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0),
-                                                          bbox)
-            tf.summary.image(
-                'image_with_bounding_boxes', image_with_box)
+            image_with_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), bbox)
+            tf.summary.image('image_with_bounding_boxes', image_with_box)
 
             # A large fraction of image datasets contain a human-annotated bounding
             # box delineating the region of the image containing the object of interest.
@@ -212,21 +211,19 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             # range of aspect ratios, sizes and overlap with the human-annotated
             # bounding box. If no box is supplied, then we assume the bounding box is
             # the entire image.
+
         sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
             tf.shape(image),
             bounding_boxes=bbox,
-            min_object_covered=0.1,
+            min_object_covered=0.5,
             aspect_ratio_range=[0.75, 1.33],
-            area_range=[0.05, 1.0],
+            area_range=[0.1, 1.0],
             max_attempts=100,
             use_image_if_no_bounding_boxes=True)
         bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
         if not thread_id:
-            image_with_distorted_box = tf.image.draw_bounding_boxes(
-                tf.expand_dims(image, 0), distort_bbox)
-            tf.summary.image(
-                'images_with_distorted_bounding_box',
-                image_with_distorted_box)
+            image_with_distorted_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), distort_bbox)
+            tf.summary.image('images_with_distorted_bounding_box', image_with_distorted_box)
 
         # Crop the image to the specified bounding box.
         distorted_image = tf.slice(image, bbox_begin, bbox_size)
@@ -241,9 +238,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
         # the third dimension.
         distorted_image.set_shape([height, width, 3])
         if not thread_id:
-            tf.summary.image(
-                'cropped_resized_image',
-                tf.expand_dims(distorted_image, 0))
+            tf.summary.image('cropped_resized_image', tf.expand_dims(distorted_image, 0))
 
         # Randomly flip the image horizontally.
         distorted_image = tf.image.random_flip_left_right(distorted_image)
@@ -255,9 +250,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
         distorted_image *= 256
 
         if not thread_id:
-            tf.summary.image(
-                'final_distorted_image',
-                tf.expand_dims(distorted_image, 0))
+            tf.summary.image('final_distorted_image', tf.expand_dims(distorted_image, 0))
         return distorted_image
 
 
@@ -300,15 +293,8 @@ def distort_color(image, thread_id=0, scope=None):
 class ImagePreprocessor(object):
     """Preprocessor for input images."""
 
-    def __init__(self,
-                 height,
-                 width,
-                 batch_size,
-                 device_count,
-                 dtype=tf.float32,
-                 train=True,
-                 distortions=None,
-                 resize_method=None):
+    def __init__(self, height, width, batch_size, device_count,
+                 dtype=tf.float32, train=True, distortions=None, resize_method=None):
         self.height = height
         self.width = width
         self.batch_size = batch_size
@@ -322,20 +308,17 @@ class ImagePreprocessor(object):
         if self.batch_size % self.device_count != 0:
             raise ValueError(
                 ('batch_size must be a multiple of device_count: '
-                 'batch_size %d, device_count: %d') %
-                (self.batch_size, self.device_count))
+                 'batch_size %d, device_count: %d') % (self.batch_size, self.device_count))
         self.batch_size_per_device = self.batch_size // self.device_count
 
     def preprocess(self, image_buffer, bbox, thread_id):
         """Preprocessing image_buffer using thread_id."""
         # Note: Width and height of image is known only at runtime.
-        image = tf.image.decode_jpeg(image_buffer, channels=3,
-                                     dct_method='INTEGER_FAST')
+        image = tf.image.decode_jpeg(image_buffer, channels=3, dct_method='INTEGER_FAST')
         if self.train and self.distortions:
             image = distort_image(image, self.height, self.width, bbox, thread_id)
         else:
-            image = eval_image(image, self.height, self.width, bbox, thread_id,
-                               self.resize_method)
+            image = eval_image(image, self.height, self.width, bbox, thread_id, self.resize_method)
         # Note: image is now float32 [height,width,3] with range [0, 255]
 
         # image = tf.cast(image, tf.uint8) # HACK TESTING
@@ -371,8 +354,7 @@ class ImagePreprocessor(object):
                 # dynamic_pad=True) # HACK TESTING dynamic_pad=True
                 images[device_index] = tf.cast(images[device_index], self.dtype)
                 depth = 3
-                images[device_index] = tf.reshape(
-                    images[device_index],
+                images[device_index] = tf.reshape(images[device_index],
                     shape=[self.batch_size_per_device, self.height, self.width, depth])
                 label_index_batch[device_index] = tf.reshape(
                     label_index_batch[device_index], [self.batch_size_per_device])

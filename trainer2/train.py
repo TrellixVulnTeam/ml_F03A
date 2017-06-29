@@ -249,8 +249,6 @@ class Trainer(object):
 
     def build_graph(self):
 
-        print('Building graph')
-
         phase_train = not (FLAGS.eval or FLAGS.forward_only)
         use_synthetic_gpu_images = (self.dataset is None)
 
@@ -278,7 +276,7 @@ class Trainer(object):
             nclass, images_splits, labels_splits = add_image_preprocessing(
                 dataset=self.dataset,
                 input_nchan=input_nchan,
-                image_size=28,
+                image_size=64,
                 batch_size=self.batch_size,
                 num_compute_devices=len(self.devices),
                 input_data_type=tf.float32
@@ -383,7 +381,6 @@ class Trainer(object):
                 for var in tf.trainable_variables():
                     tf.summary.histogram(var.op.name, var)
         fetches = [train_op, total_loss] + enqueue_ops
-        print('BUILT GRAPH')
         return enqueue_ops, fetches
 
     def add_forward_pass_and_gradients(
@@ -529,14 +526,13 @@ class Trainer(object):
 def add_image_preprocessing(
                             dataset=None,
                             input_nchan=3,
-                            image_size=28,
+                            image_size=64,
                             batch_size=32,
                             num_compute_devices=1,
                             input_data_type=tf.float32,
                             resize_method=FLAGS.resize_method,
                             train=True
                             ):
-    print('add_image_preprocessing')
     if dataset is not None:
         preproc_train = input.ImagePreprocessor(
             image_size, image_size, batch_size,

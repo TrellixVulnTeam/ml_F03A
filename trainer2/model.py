@@ -47,6 +47,8 @@ class Model:
             PoolLayer('pool_1'),
             Conv2dLayer2(32, 64, 5, 5, 'conv_2'),
             PoolLayer('pool_2'),
+            Conv2dLayer2(64, 64, 5, 5, 'conv_3'),
+            PoolLayer('pool_3'),
             ReshapeLayer(output_shape=[-1, 64 * 7 * 7]),
             AffineLayer('fc_1', 3136, 512),
             AffineLayer('output', 512, 1001, final_layer=True)

@@ -151,6 +151,7 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_string(
     'data_dir', None,
+    # 'data_dir', '../data/data/train',
     'Path to dataset in TFRecord format. If not specified, synthetic data will'
     ' be used.'
 )
