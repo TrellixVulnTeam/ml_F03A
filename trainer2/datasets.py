@@ -54,13 +54,13 @@ class ImgData(Dataset):
         super(ImgData, self).__init__('image-net', data_dir)
 
     def num_classes(self):
-        return 5
+        return 6
 
     def num_examples_per_epoch(self, subset='train'):
         if subset == 'train':
-            return 6429
+            return 7402
         elif subset == 'validation':
-            return 717
+            return 825
         else:
             raise ValueError('Invalid data subset "%s"' % subset)
 

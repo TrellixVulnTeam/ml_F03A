@@ -11,7 +11,6 @@ from trainer2.model import Model
 def main(_):
 
     print('START MAIN')
-
     model = Model.trial()
     trainer = train.Trainer(model, task.Task())
     trainer.run()

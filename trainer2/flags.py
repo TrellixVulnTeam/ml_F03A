@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 100,
+    'num_batches', 10000,
     'number of batches to run, excluding warmup'
 )
 
@@ -129,7 +129,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'display_every', 2,
+    'display_every', 10,
     'Number of local steps after which progress is printed out'
 )
 
@@ -190,7 +190,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 50,
+    'save_summaries_steps', 10,
     'How often to save summaries for trained models. Pass 0 to disable'
     ' summaries.'
 )

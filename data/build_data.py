@@ -14,7 +14,12 @@ from __future__ import print_function
 import os
 import tarfile
 import shutil
-from urllib import request as urllib2
+import sys
+
+if sys.version_info >= (3,):
+    from urllib import request as urllib2
+else:
+    import urllib2
 
 import numpy as np
 import tensorflow as tf
@@ -202,7 +207,7 @@ def main(_):
     assert not FLAGS.validation_shards % FLAGS.num_threads, \
         'Please make the FLAGS.num_threads commensurate with FLAGS.validation_shards'
 
-    _maybe_download_and_extract(FLAGS.download_list)
+    # _maybe_download_and_extract(FLAGS.download_list)
 
     # Unpack raw data
     train, valid, u_labels = _unpack_data(FLAGS.data_dir, FLAGS.output_dir)

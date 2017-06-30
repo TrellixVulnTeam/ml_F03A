@@ -18,8 +18,10 @@ from trainer2 import input
 from trainer2 import datasets
 from trainer2 import util
 FLAGS = flags.get_flags()
-log_fn = print
-tf.logging.set_verbosity(tf.logging.DEBUG)
+
+
+def log_fn(string):
+    util.log_fn(string)
 
 
 class Trainer(object):
@@ -346,7 +348,7 @@ class Trainer(object):
                 avg_grads = self.manager.get_gradients_to_apply(d, gradient_state)
 
                 gradient_clip = FLAGS.gradient_clip
-                learning_rate = self.model.initial_lr
+                learning_rate = self.model.learning_rate
 
                 if self.dataset and FLAGS.num_epochs_per_decay > 0:
                     num_batches_per_epoch = (
@@ -545,10 +547,7 @@ def add_image_preprocessing(
         images, labels = preproc_train.minibatch(dataset, subset=subset)
         images_splits = images
         labels_splits = labels
-        # Note: We force all datasets to 1000 to ensure even comparison
-        #         This works because we use sparse_softmax_cross_entropy
-        # nclass = dataset.num_classes
-        nclass = 4
+        nclass = dataset.num_classes
     else:
         """Add image Preprocessing ops to tf graph."""
         nclass = 1001

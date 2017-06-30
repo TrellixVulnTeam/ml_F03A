@@ -12,3 +12,8 @@ def create_config_proto():
     # config.gpu_options.force_gpu_compatible = FLAGS.force_gpu_compatible
     # config.gpu_options.force_gpu_compatible = True
     return config
+
+
+def log_fn(string):
+    tf.logging.info(string)
+    # print(string)

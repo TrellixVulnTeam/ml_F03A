@@ -2,11 +2,7 @@
 import threading
 import time
 
-
-log_fn = print
-# def log_fn(string):
-#     tf.logging.info(string)
-#     # print(string)
+from trainer2.util import log_fn
 
 
 class GlobalStepWatcher(threading.Thread):
