@@ -4,7 +4,7 @@ declare -r PROJECT=$(gcloud config list project --format "value(core.project)")
 declare -r BUCKET=gs://vuzii-ml-mlengine
 declare -r DATA_PATH=${BUCKET}/data
 
-declare -r JOB_NAME=test_11
+declare -r JOB_NAME=test_17_basic_gpu
 declare -r OUTPUT_PATH=${BUCKET}/${JOB_NAME}
 
 declare -r MODEL_NAME=imagenet
@@ -22,6 +22,7 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --runtime-version 1.2 \
 --module-name trainer2.main \
 --package-path trainer2/ \
+--scale-tier BASIC_GPU \
 -- \
 --data_dir "${DATA_PATH}/data/train" \
---train_dir "${BUCKET}/summary/${JOB_NAME}"
+--train_dir "${BUCKET}/summary/${JOB_NAME}" \

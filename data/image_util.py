@@ -51,6 +51,7 @@ def _build_synset_lookup(imagenet_metadata_file, u_labels):
             synset = parts[0]
             if synset in u_labels:
                 human = parts[1]
+                print(human)
                 synset_to_human[synset] = human
     return synset_to_human
 

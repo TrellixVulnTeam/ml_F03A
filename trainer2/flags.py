@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 10000,
+    'num_batches', 100,
     'number of batches to run, excluding warmup'
 )
 
@@ -79,12 +79,12 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_float(
-    'learning_rate', None,
+    'learning_rate', 0.005,
     'Initial learning rate for training.'
 )
 
 tf.flags.DEFINE_float(
-    'num_epochs_per_decay', 0,
+    'num_epochs_per_decay', 1,
     'Steps after which learning rate decays.'
 )
 
@@ -129,7 +129,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'display_every', 10,
+    'display_every', 100,
     'Number of local steps after which progress is printed out'
 )
 
@@ -190,13 +190,13 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 10,
+    'save_summaries_steps', 25,
     'How often to save summaries for trained models. Pass 0 to disable'
     ' summaries.'
 )
 
 tf.flags.DEFINE_integer(
-    'save_model_secs', 100,
+    'save_model_secs', 300,
     'How often to save trained models. Pass 0 to disable checkpoints'
 )
 
