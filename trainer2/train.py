@@ -28,12 +28,12 @@ def log_fn(string):
 class Trainer(object):
     """Class for model training."""
 
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
         self.model = Model.trial()
         self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
-        self.manager = manager.VariableMgrLocalFetchFromPS(self)
         self.ps_hosts = FLAGS.ps_hosts.split(',')
         self.worker_hosts = FLAGS.worker_hosts.split(',')
 
@@ -49,8 +49,6 @@ class Trainer(object):
 
         self.task_index = FLAGS.task_index
         self.local_parameter_device_flag = FLAGS.local_parameter_device
-        self.param_server_device = '/%s:0' % FLAGS.local_parameter_device
-        self.sync_queue_devices = [self.param_server_device]
 
         self.job_name = FLAGS.job_name
 
@@ -81,15 +79,25 @@ class Trainer(object):
             self.param_server_device = '/%s:0' % FLAGS.local_parameter_device
             self.sync_queue_devices = [self.param_server_device]
 
-        self.cpu_device = '%s/cpu:0' % worker_prefix
-        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in range(FLAGS.num_gpus)]
+        assert self.job_name == self.config.job_name
+        assert self.config.task_index == self.config.task_index
+        assert self.ps_hosts == self.config.ps_tasks
+        assert self.worker_hosts == self.config.worker_tasks
+        assert self.cluster == self.config.cluster
+        assert self.server == self.config.server
+        assert worker_prefix == self.config.worker_prefix
+        assert self.param_server_device == self.config.ps_device
+        assert self.sync_queue_devices == self.config.sync_queue_devices
+
+        self.cpu_device = '%s/cpu:0' % self.config.worker_prefix
+        self.raw_devices = ['%s/%s:%i' % (self.config.worker_prefix, FLAGS.device, i) for i in range(FLAGS.num_gpus)]
 
         if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
             raise ValueError('staged_vars for now is only supported with '
                              '--variable_update=parameter_server')
 
         if FLAGS.variable_update == 'parameter_server':
-            if self.job_name:
+            if self.config.job_name:
                 if not FLAGS.staged_vars:
                     self.manager = manager.VariableMgrDistributedFetchFromPS(self)
                 else:
@@ -100,16 +108,16 @@ class Trainer(object):
                 else:
                     self.manager = manager.VariableMgrLocalFetchFromStagedPS(self)
         elif FLAGS.variable_update == 'replicated':
-            if self.job_name:
+            if self.config.job_name:
                 raise ValueError('Invalid --variable_update in distributed mode: %s' %
                                  FLAGS.variable_update)
             self.manager = manager.VariableMgrLocalReplicated(self, FLAGS.use_nccl)
         elif FLAGS.variable_update == 'distributed_replicated':
-            if not self.job_name:
+            if not self.config.job_name:
                 raise ValueError('Invalid --variable_update in local mode: %s' % FLAGS.variable_update)
             self.manager = manager.VariableMgrDistributedReplicated(self)
         elif FLAGS.variable_update == 'independent':
-            if self.job_name:
+            if self.config.job_name:
                 raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
             self.manager = manager.VariableMgrIndependent(self)
         else:
@@ -118,13 +126,17 @@ class Trainer(object):
         self.dataset = datasets.ImgData(FLAGS.data_dir) if FLAGS.data_dir is not None else None
 
         self.devices = self.manager.get_devices()
-        if self.job_name:
-            self.global_step_device = self.param_server_device
+        if self.config.job_name:
+            self.global_step_device = self.config.param_server_device
         else:
             self.global_step_device = self.cpu_device
 
     def run(self):
         """Run trainer."""
+        if self.config.job_name == 'ps':
+            print('ps server')
+            return
+
         with tf.Graph().as_default():
             self.train()
 
@@ -134,7 +146,7 @@ class Trainer(object):
         main_fetch_group = tf.group(*fetches)
 
         execution_barrier = None
-        if self.job_name and not FLAGS.cross_replica_sync:
+        if self.config.job_name and not FLAGS.cross_replica_sync:
             execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
 
         global_step = tf.contrib.framework.get_global_step()
@@ -143,7 +155,7 @@ class Trainer(object):
                 inc_global_step = global_step.assign_add(1)
                 fetches.append(inc_global_step)
 
-        if self.job_name and FLAGS.cross_replica_sync:
+        if self.config.job_name and FLAGS.cross_replica_sync:
             # Block all replicas until all replicas are ready for next step.
             fetches.append(self.add_sync_queues_and_barrier('sync_queues_step_end_', [main_fetch_group]))
 
@@ -155,16 +167,16 @@ class Trainer(object):
 
         local_var_init_op = tf.local_variables_initializer()
         summary_op = tf.summary.merge_all()
-        is_chief = (not self.job_name or self.task_index == 0)
+
         summary_writer = None
-        if is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
+        if self.config.is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir, tf.get_default_graph())
 
-        sv = self.set_sv(is_chief, global_step, summary_writer)
+        sv = self.set_sv(self.config.is_chief, global_step, summary_writer)
 
         step_train_times = []
         with sv.managed_session(
-                master=self.server.target if self.server else '',
+                master=self.config.server.target if self.config.server else '',
                 config=util.create_config_proto(),
                 start_standard_services=FLAGS.summary_verbosity > 0) as sess:
 
@@ -178,8 +190,8 @@ class Trainer(object):
 
             global_step_watcher = GlobalStepWatcher(
                 sess, global_step,
-                len(self.worker_hosts) * self.num_warmup_batches + init_global_step,
-                len(self.worker_hosts) * (self.num_warmup_batches + self.num_batches) - 1)
+                len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
+                len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
 
             if self.graph_file is not None:
@@ -219,7 +231,7 @@ class Trainer(object):
                     step_train_times,
                     self.trace_filename, fetch_summary)
 
-                if summary_str is not None and is_chief:
+                if summary_str is not None and self.config.is_chief:
                     sv.summary_computed(sess, summary_str)
                 local_step += 1
             # Waits for the global step to be done, regardless of done_fn.
@@ -231,7 +243,7 @@ class Trainer(object):
             log_fn('-' * 64)
 
             # Save the model checkpoint.
-            if FLAGS.train_dir is not None and is_chief:
+            if FLAGS.train_dir is not None and self.config.is_chief:
                 checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
                 if not gfile.Exists(FLAGS.train_dir):
                     gfile.MakeDirs(FLAGS.train_dir)
@@ -319,7 +331,7 @@ class Trainer(object):
         if gpu_grad_stage_ops:
             staging_delta_ops += gpu_grad_stage_ops
         if staging_delta_ops:
-            enqueue_ops.append(tf.group(*(staging_delta_ops)))
+            enqueue_ops.append(tf.group(*staging_delta_ops))
 
         if not phase_train:
             if FLAGS.forward_only:
@@ -357,18 +369,16 @@ class Trainer(object):
                 if gradient_clip is not None:
                     clipped_grads = [
                         (tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
-                        for grad, var in avg_grads
-                    ]
+                        for grad, var in avg_grads]
                 else:
                     clipped_grads = avg_grads
                 # Set optimizer for training
                 opt = tf.train.GradientDescentOptimizer(learning_rate)
-                self.manager.append_apply_gradients_ops(
-                    gradient_state, opt, clipped_grads, training_ops)
+                self.manager.append_apply_gradients_ops(gradient_state, opt, clipped_grads, training_ops)
         train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
 
         with tf.device(self.cpu_device):
-            if self.task_index == 0 and FLAGS.summary_verbosity > 0:
+            if self.config.task_index == 0 and FLAGS.summary_verbosity > 0:
                 tf.summary.scalar('learning_rate', learning_rate)
                 tf.summary.scalar('total_loss', total_loss)
                 for grad, var in avg_grads:
@@ -483,8 +493,8 @@ class Trainer(object):
           an op that should be used as control dependency before starting next step.
         """
         self.sync_queue_counter += 1
-        num_workers = self.cluster.num_tasks('worker')
-        with tf.device(self.sync_queue_devices[self.sync_queue_counter % len(self.sync_queue_devices)]):
+        num_workers = self.config.cluster.num_tasks('worker')
+        with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
             sync_queues = [
                 tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]],
                              shared_name='%s%s' % (name_prefix, i))
@@ -495,14 +505,14 @@ class Trainer(object):
             token = tf.constant(False)
             with tf.control_dependencies(enqueue_after_list):
                 for i, q in enumerate(sync_queues):
-                    if i == self.task_index:
+                    if i == self.config.task_index:
                         queue_ops.append(tf.no_op())
                     else:
                         queue_ops.append(q.enqueue(token))
 
             # Drain tokens off queue for this worker, one for each other worker.
             queue_ops.append(
-                sync_queues[self.task_index].dequeue_many(
+                sync_queues[self.config.task_index].dequeue_many(
                     len(sync_queues) - 1))
 
             return tf.group(*queue_ops)
