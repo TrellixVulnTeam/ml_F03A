@@ -44,8 +44,7 @@ class OverrideCachingDevice(object):
         if size < self.small_variable_size_threshold:
             device_name = self.device_for_small_variables
         else:
-            device_index, _ = min(enumerate(
-                self.sizes), key=operator.itemgetter(1))
+            device_index, _ = min(enumerate(self.sizes), key=operator.itemgetter(1))
             device_name = self.devices[device_index]
             self.sizes[device_index] += size
 
@@ -155,8 +154,7 @@ class VariableMgr(object):
         del device_num, gradient_state  # unused by this implementation
         assert False, 'Must be implemented in subclass'
 
-    def append_apply_gradients_ops(
-            self, gradient_state, opt, grads, training_ops):
+    def append_apply_gradients_ops(self, gradient_state, opt, grads, training_ops):
         """Adds training ops for grads to 'training_ops'.
 
         Args:
@@ -206,8 +204,7 @@ class VariableMgrIndependent(VariableMgr):
     """VariableMgr that implements the --independent mode for local jobs.
 
        Each GPU has its own copy of the variables, and gradients are
-       not shared between towers. This can be used to check
-       performance when no data is moved between GPUs.
+       not shared between towers. This can be used to check performance when no data is moved between GPUs.
     """
 
     def each_tower_has_variables(self):
@@ -217,7 +214,7 @@ class VariableMgrIndependent(VariableMgr):
         return tf.variable_scope('v%s' % device_num)
 
     def preprocess_device_grads(self, device_grads):
-        return (self.benchmark_cnn.devices, device_grads)
+        return self.benchmark_cnn.devices, device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         device_grads = gradient_state
@@ -233,8 +230,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
     """VariableMgr that implements the --parameter_server mode for local jobs.
 
        Variables are stored on a parameter server.  For each step, each tower gets
-       a copy of the variables from the parameter server, and sends its gradients
-       to the param server.
+       a copy of the variables from the parameter server, and sends its gradients to the param server.
     """
 
     def each_tower_has_variables(self):
@@ -244,7 +240,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
         return tf.variable_scope('v', reuse=bool(device_num))
 
     def preprocess_device_grads(self, device_grads):
-        return ([self.benchmark_cnn.param_server_device], device_grads)
+        return [self.benchmark_cnn.param_server_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -520,7 +516,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def preprocess_device_grads(self, device_grads):
         # Returns (gradient_devices, gradient_state)
-        return ([self.benchmark_cnn.param_server_device], device_grads)
+        return [self.benchmark_cnn.param_server_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -535,8 +531,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
             for d in self.benchmark_cnn.raw_devices]
 
 
-class VariableMgrDistributedFetchFromStagedPS(
-    VariableMgrDistributedFetchFromPS):
+class VariableMgrDistributedFetchFromStagedPS(VariableMgrDistributedFetchFromPS):
     """Extends VariableMgrDistributedFetchFromPS for --staged_vars."""
 
     def __init__(self, benchmark_cnn):
@@ -547,17 +542,14 @@ class VariableMgrDistributedFetchFromStagedPS(
 
     def create_outer_variable_scope(self, device_num):
         self._custom_getter = StagedVariableGetter(
-            device_num, self.benchmark_cnn.raw_devices,
-            self.benchmark_cnn.cpu_device, self)
-        return tf.variable_scope(
-            'v', reuse=bool(device_num), custom_getter=self._custom_getter)
+            device_num, self.benchmark_cnn.raw_devices, self.benchmark_cnn.cpu_device, self)
+        return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
 
     def supports_staged_vars(self):
         return True
 
     def trainable_variables_on_device(self, device_num, writable=False):
-        return self._custom_getter.trainable_variables_on_device(
-            device_num, writable=writable)
+        return self._custom_getter.trainable_variables_on_device(device_num, writable=writable)
 
 
 class VariableMgrDistributedReplicated(VariableMgr):
@@ -573,12 +565,10 @@ class VariableMgrDistributedReplicated(VariableMgr):
         return True
 
     def create_outer_variable_scope(self, device_num):
-        return tf.variable_scope(
-            'v%s' % device_num,
-            custom_getter=OverrideToLocalVariableIfNotPsVar())
+        return tf.variable_scope('v%s' % device_num, custom_getter=OverrideToLocalVariableIfNotPsVar())
 
     def preprocess_device_grads(self, device_grads):
-        return ([self.benchmark_cnn.param_server_device], device_grads)
+        return [self.benchmark_cnn.param_server_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         device_grads = gradient_state  # From 2nd result of preprocess_device_grads.
@@ -661,8 +651,7 @@ def sum_gradients_all_reduce(tower_grads, devices):
     return list(zip(*new_tower_grads))
 
 
-def aggregate_gradients_using_copy_with_device_selection(
-        benchmark_cnn, tower_grads, use_mean):
+def aggregate_gradients_using_copy_with_device_selection(benchmark_cnn, tower_grads, use_mean):
     """Aggregate gradients, controlling device for the aggregation.
 
     Args:
@@ -682,13 +671,11 @@ def aggregate_gradients_using_copy_with_device_selection(
     agg_grads = []
     for i, single_grads in enumerate(zip(*tower_grads)):
         with tf.device(avail_devices[i % len(avail_devices)]):
-            agg_grads.extend(
-                aggregate_gradients_using_copy(zip(single_grads), use_mean))
+            agg_grads.extend(aggregate_gradients_using_copy(zip(single_grads), use_mean))
     return agg_grads
 
 
-def aggregate_gradients_using_copy_with_variable_colocation(
-        tower_grads, use_mean):
+def aggregate_gradients_using_copy_with_variable_colocation(tower_grads, use_mean):
     """Aggregate gradients, colocating computation with the gradient's variable.
 
     Args:
@@ -708,8 +695,7 @@ def aggregate_gradients_using_copy_with_variable_colocation(
             assert v == var
 
         with tf.device(var.device):
-            agg_grads.extend(
-                aggregate_gradients_using_copy(zip(single_grads), use_mean))
+            agg_grads.extend(aggregate_gradients_using_copy(zip(single_grads), use_mean))
     return agg_grads
 
 

@@ -17,6 +17,7 @@ from trainer2.global_step import GlobalStepWatcher
 from trainer2 import input
 from trainer2 import datasets
 from trainer2 import util
+from trainer2.model import Model
 FLAGS = flags.get_flags()
 
 
@@ -27,9 +28,8 @@ def log_fn(string):
 class Trainer(object):
     """Class for model training."""
 
-    def __init__(self, model, task):
-        self.model = model
-        self.task = task
+    def __init__(self):
+        self.model = Model.trial()
         self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
@@ -91,32 +91,26 @@ class Trainer(object):
         if FLAGS.variable_update == 'parameter_server':
             if self.job_name:
                 if not FLAGS.staged_vars:
-                    self.manager = manager.VariableMgrDistributedFetchFromPS(
-                        self)
+                    self.manager = manager.VariableMgrDistributedFetchFromPS(self)
                 else:
-                    self.manager = (
-                        manager.VariableMgrDistributedFetchFromStagedPS(self))
+                    self.manager = manager.VariableMgrDistributedFetchFromStagedPS(self)
             else:
                 if not FLAGS.staged_vars:
                     self.manager = manager.VariableMgrLocalFetchFromPS(self)
                 else:
-                    self.manager = manager.VariableMgrLocalFetchFromStagedPS(
-                        self)
+                    self.manager = manager.VariableMgrLocalFetchFromStagedPS(self)
         elif FLAGS.variable_update == 'replicated':
             if self.job_name:
                 raise ValueError('Invalid --variable_update in distributed mode: %s' %
                                  FLAGS.variable_update)
-            self.manager = manager.VariableMgrLocalReplicated(
-                self, FLAGS.use_nccl)
+            self.manager = manager.VariableMgrLocalReplicated(self, FLAGS.use_nccl)
         elif FLAGS.variable_update == 'distributed_replicated':
             if not self.job_name:
-                raise ValueError('Invalid --variable_update in local mode: %s' %
-                                 FLAGS.variable_update)
+                raise ValueError('Invalid --variable_update in local mode: %s' % FLAGS.variable_update)
             self.manager = manager.VariableMgrDistributedReplicated(self)
         elif FLAGS.variable_update == 'independent':
             if self.job_name:
-                raise ValueError('Invalid --variable_update in distributed mode: %s' %
-                                 FLAGS.variable_update)
+                raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
             self.manager = manager.VariableMgrIndependent(self)
         else:
             raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)

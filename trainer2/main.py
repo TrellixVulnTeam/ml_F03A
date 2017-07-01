@@ -5,9 +5,7 @@ import tensorflow as tf
 import json
 import os
 
-from trainer2 import task
-from trainer2 import train
-from trainer2.model import Model
+from trainer2.train import Trainer
 
 
 def main(_):
@@ -16,6 +14,7 @@ def main(_):
     # If TF_CONFIG is not available run local
     if not tf_config:
         tf.logging.info('NO TF_CONFIG!')
+        return Trainer().run()
 
     tf_config_json = json.loads(tf_config)
     tf.logging.info(tf_config_json)
@@ -24,9 +23,18 @@ def main(_):
     job_name = tf_config_json.get('task', {}).get('type')
     task_index = tf_config_json.get('task', {}).get('index')
 
-    model = Model.trial()
-    trainer = train.Trainer(model, task.Task())
-    trainer.run()
+    # If cluster information is empty run local
+    if job_name is None or task_index is None:
+        return Trainer().run()
+
+    cluster_spec = tf.train.ClusterSpec(cluster)
+    server = tf.train.Server(cluster_spec, job_name=job_name, task_index=task_index)
+
+    if job_name == 'ps':
+        server.join()
+        return
+    elif job_name in ['master', 'worker']:
+        return Trainer().run()
 
     print('END MAIN')
 
