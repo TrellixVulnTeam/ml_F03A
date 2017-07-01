@@ -34,8 +34,6 @@ class Trainer(object):
         self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
-        self.ps_hosts = FLAGS.ps_hosts.split(',')
-        self.worker_hosts = FLAGS.worker_hosts.split(',')
 
         autotune_threshold = FLAGS.autotune_threshold if FLAGS.autotune_threshold else 1
         min_autotune_warmup = 5 * autotune_threshold * autotune_threshold
@@ -47,54 +45,11 @@ class Trainer(object):
         self.num_gpus = FLAGS.num_gpus
         self.batch_size = self.model.batch_size * self.num_gpus
 
-        self.task_index = FLAGS.task_index
-        self.local_parameter_device_flag = FLAGS.local_parameter_device
-
-        self.job_name = FLAGS.job_name
-
-        if self.job_name:
-            self.task_index = FLAGS.task_index
-            self.cluster = tf.train.ClusterSpec({'ps': self.ps_hosts,
-                                                 'worker': self.worker_hosts})
-            self.server = None
-
-            if not self.server:
-                self.server = tf.train.Server(self.cluster, job_name=self.job_name,
-                                              task_index=self.task_index,
-                                              config=util.create_config_proto(),
-                                              protocol=FLAGS.server_protocol)
-            worker_prefix = '/job:worker/task:%s' % self.task_index
-            self.param_server_device = tf.train.replica_device_setter(
-                worker_device=worker_prefix + '/cpu:0', cluster=self.cluster)
-            # This device on which the queues for managing synchronization between
-            # servers should be stored.
-            num_ps = len(self.ps_hosts)
-            self.sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i
-                                       for i in range(num_ps)]
-        else:
-            self.task_index = 0
-            self.cluster = None
-            self.server = None
-            worker_prefix = ''
-            self.param_server_device = '/%s:0' % FLAGS.local_parameter_device
-            self.sync_queue_devices = [self.param_server_device]
-
-        assert self.job_name == self.config.job_name
-        assert self.config.task_index == self.config.task_index
-        assert self.ps_hosts == self.config.ps_tasks
-        assert self.worker_hosts == self.config.worker_tasks
-        assert self.cluster == self.config.cluster
-        assert self.server == self.config.server
-        assert worker_prefix == self.config.worker_prefix
-        assert self.param_server_device == self.config.ps_device
-        assert self.sync_queue_devices == self.config.sync_queue_devices
-
         self.cpu_device = '%s/cpu:0' % self.config.worker_prefix
         self.raw_devices = ['%s/%s:%i' % (self.config.worker_prefix, FLAGS.device, i) for i in range(FLAGS.num_gpus)]
 
         if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
-            raise ValueError('staged_vars for now is only supported with '
-                             '--variable_update=parameter_server')
+            raise ValueError('staged_vars for now is only supported with --variable_update=parameter_server')
 
         if FLAGS.variable_update == 'parameter_server':
             if self.config.job_name:
@@ -127,14 +82,15 @@ class Trainer(object):
 
         self.devices = self.manager.get_devices()
         if self.config.job_name:
-            self.global_step_device = self.config.param_server_device
+            self.global_step_device = self.config.ps_device
         else:
             self.global_step_device = self.cpu_device
 
     def run(self):
         """Run trainer."""
         if self.config.job_name == 'ps':
-            print('ps server')
+            print('running ps server')
+            self.config.server.join()
             return
 
         with tf.Graph().as_default():

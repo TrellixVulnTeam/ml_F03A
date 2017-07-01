@@ -23,6 +23,7 @@ class Config(object):
         self.worker_prefix = worker_prefix
         self.ps_device = ps_device
         self.sync_queue_devices = sync_queue_devices
+        self.local_parameter_device = FLAGS.local_parameter_device
 
 
 def create_config_proto():
@@ -40,7 +41,8 @@ def get_config():
 
     # If TF_CONFIG is not available run local
     if not tf_config:
-        return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''], sync_queue_devices=[PS_DEVICE_STR])
+        return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
+                      sync_queue_devices=[PS_DEVICE_STR])
 
     tf_config_json = json.loads(tf_config)
 
@@ -50,7 +52,8 @@ def get_config():
 
     # If cluster information is empty run local
     if job_name is None or task_index is None:
-        return Config(job_name='', task_index=0, ps_tasks=[''], worker_tasks=[''])
+        return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
+                      sync_queue_devices=[PS_DEVICE_STR])
     else:
         ps_tasks = cluster.get('ps') or ['']
         worker_tasks = cluster.get('worker') or ['']

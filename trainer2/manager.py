@@ -240,7 +240,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
         return tf.variable_scope('v', reuse=bool(device_num))
 
     def preprocess_device_grads(self, device_grads):
-        return [self.benchmark_cnn.param_server_device], device_grads
+        return [self.benchmark_cnn.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -250,11 +250,11 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
 
     def get_devices(self):
         raw_devices = self.benchmark_cnn.raw_devices
-        if self.benchmark_cnn.local_parameter_device_flag == 'gpu':
+        if self.benchmark_cnn.config.local_parameter_device == 'gpu':
             return [ParamServerDeviceSetter(d, raw_devices) for d in raw_devices]
         else:
             return [tf.train.replica_device_setter(
-                worker_device=d, ps_device=self.benchmark_cnn.param_server_device,
+                worker_device=d, ps_device=self.benchmark_cnn.config.ps_device,
                 ps_tasks=1) for d in raw_devices]
 
 
@@ -505,7 +505,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
         return False
 
     def create_outer_variable_scope(self, device_num):
-        if self.benchmark_cnn.local_parameter_device_flag == 'gpu':
+        if self.benchmark_cnn.config.local_parameter_device == 'gpu':
             caching_devices = self.benchmark_cnn.raw_devices
         else:
             caching_devices = [self.benchmark_cnn.cpu_device]
@@ -516,7 +516,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def preprocess_device_grads(self, device_grads):
         # Returns (gradient_devices, gradient_state)
-        return [self.benchmark_cnn.param_server_device], device_grads
+        return [self.benchmark_cnn.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -524,7 +524,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def get_devices(self):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
-            len(self.benchmark_cnn.ps_hosts), tf.contrib.training.byte_size_load_fn)
+            len(self.benchmark_cnn.config.ps_hosts), tf.contrib.training.byte_size_load_fn)
         return [tf.train.replica_device_setter(
             worker_device=d, cluster=self.benchmark_cnn.cluster,
             ps_strategy=ps_strategy)
@@ -568,7 +568,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
         return tf.variable_scope('v%s' % device_num, custom_getter=OverrideToLocalVariableIfNotPsVar())
 
     def preprocess_device_grads(self, device_grads):
-        return [self.benchmark_cnn.param_server_device], device_grads
+        return [self.benchmark_cnn.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         device_grads = gradient_state  # From 2nd result of preprocess_device_grads.
@@ -664,10 +664,10 @@ def aggregate_gradients_using_copy_with_device_selection(benchmark_cnn, tower_gr
       List of pairs of (gradient, variable) where the gradient has been averaged
        across all towers.
     """
-    if benchmark_cnn.local_parameter_device_flag == 'gpu':
+    if benchmark_cnn.config.local_parameter_device == 'gpu':
         avail_devices = benchmark_cnn.raw_devices
     else:
-        avail_devices = [benchmark_cnn.param_server_device]
+        avail_devices = [benchmark_cnn.config.ps_device]
     agg_grads = []
     for i, single_grads in enumerate(zip(*tower_grads)):
         with tf.device(avail_devices[i % len(avail_devices)]):
