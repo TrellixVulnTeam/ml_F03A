@@ -524,9 +524,9 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def get_devices(self):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
-            len(self.benchmark_cnn.config.ps_hosts), tf.contrib.training.byte_size_load_fn)
+            len(self.benchmark_cnn.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
         return [tf.train.replica_device_setter(
-            worker_device=d, cluster=self.benchmark_cnn.cluster,
+            worker_device=d, cluster=self.benchmark_cnn.config.cluster,
             ps_strategy=ps_strategy)
             for d in self.benchmark_cnn.raw_devices]
 

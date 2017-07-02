@@ -88,13 +88,13 @@ class Trainer(object):
 
     def run(self):
         """Run trainer."""
-        if self.config.job_name == 'ps':
-            print('running ps server')
+        if self.config.job_name in ['ps', 'master']:
+            log_fn('running ps server')
             self.config.server.join()
             return
-
-        with tf.Graph().as_default():
-            self.train()
+        else:
+            with tf.Graph().as_default():
+                self.train()
 
     def train(self):
 
@@ -583,8 +583,7 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
         log_fn('Dumping trace to', trace_filename)
         trace = timeline.Timeline(step_stats=run_metadata.step_stats)
         with open(trace_filename, 'w') as trace_file:
-            trace_file.write(
-                trace.generate_chrome_trace_format(show_memory=True))
+            trace_file.write(trace.generate_chrome_trace_format(show_memory=True))
     return summary_str
 
 

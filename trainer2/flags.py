@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 100,
+    'num_batches', 10000,
     'number of batches to run, excluding warmup'
 )
 
@@ -256,7 +256,7 @@ tf.flags.DEFINE_boolean(
 #       For each step, each tower gets a copy of the variables from the
 #       parameter server, and sends its gradients to the param server.
 #   replicated: each GPU has its own copy of the variables. To apply gradients,
-#       nccl all-reduce or regular cross-device aggregation is used 2 replicate
+#       nccl all-reduce or regular cross-device aggregation is used to replicate
 #       the combined gradients to all towers (depending on --use_nccl option).
 #   independent: each GPU has its own copy of the variables, and gradients are
 #       not shared between towers. This can be used to check perf. when no
