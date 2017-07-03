@@ -35,12 +35,12 @@ tf.flags.DEFINE_string(
 #############
 
 tf.flags.DEFINE_integer(
-    'batch_size', 0,
+    'batch_size', 32,
     'batch size per compute device'
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 2000,
+    'num_batches', 1000,
     'number of batches to run, excluding warmup'
 )
 
@@ -201,7 +201,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_string(
-    'train_dir', 'train_data',
+    'train_dir', None,
     'Path to session checkpoints.'
 )
 
@@ -215,8 +215,9 @@ tf.flags.DEFINE_string(
     'Path to pretrained session checkpoints.'
 )
 
+# https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
 tf.flags.DEFINE_string(
-    'trace_file', 'trace.json',
+    'trace_file', None,
     'Enable TensorFlow tracing and write trace to this file.'
 )
 

@@ -17,5 +17,6 @@ def main(_):
     else:
         raise ValueError('Invalid task_type: {}'.format(config.job_name))
 
+
 if __name__ == '__main__':
     tf.app.run()

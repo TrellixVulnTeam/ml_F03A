@@ -188,6 +188,8 @@ class Trainer(object):
                     sv.summary_computed(sess, summary_str)
                 local_step += 1
             # Waits for the global step to be done, regardless of done_fn.
+            log_fn('{}-{} finished work!'.format(self.config.job_name, self.config.task_index))
+
             while not global_step_watcher.done():
                 time.sleep(.25)
             images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
@@ -447,23 +449,24 @@ class Trainer(object):
         """
         self.sync_queue_counter += 1
         num_workers = self.config.cluster.num_tasks('worker')
-        with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
-            sync_queues = [
-                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
-                for i in range(num_workers)]
-            queue_ops = []
-            # For each other worker, add an entry in a queue, signaling that it can
-            # finish this step.
-            token = tf.constant(False)
-            with tf.control_dependencies(enqueue_after_list):
-                for i, q in enumerate(sync_queues):
-                    if i == self.config.task_index:
-                        queue_ops.append(tf.no_op())
-                    else:
-                        queue_ops.append(q.enqueue(token))
+        with tf.name_scope('FIFO_QUEUE'):
+            with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
+                sync_queues = [
+                    tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
+                    for i in range(num_workers)]
+                queue_ops = []
+                # For each other worker, add an entry in a queue, signaling that it can
+                # finish this step.
+                token = tf.constant(False)
+                with tf.control_dependencies(enqueue_after_list):
+                    for i, q in enumerate(sync_queues):
+                        if i == self.config.task_index:
+                            queue_ops.append(tf.no_op())
+                        else:
+                            queue_ops.append(q.enqueue(token))
 
-            # Drain tokens off queue for this worker, one for each other worker.
-            queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
+                # Drain tokens off queue for this worker, one for each other worker.
+                queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
 
             return tf.group(*queue_ops)
 
@@ -487,6 +490,8 @@ class Trainer(object):
         log_fn('Data format: %s' % self.data_format)
         log_fn('Optimizer:   %s' % FLAGS.optimizer)
         log_fn('Variables:   %s' % FLAGS.variable_update)
+        log_fn(self.config.worker_tasks)
+        log_fn(self.config.worker_prefix)
         if FLAGS.variable_update == 'replicated':
             log_fn('Use NCCL:    %s' % FLAGS.use_nccl)
         if FLAGS.staged_vars:
@@ -546,7 +551,6 @@ def add_image_preprocessing(
             images_splits = tf.split(images, num_compute_devices, 0)
             labels_splits = tf.split(labels, num_compute_devices, 0)
 
-    print('Preprocessing done.')
     return nclass, images_splits, labels_splits
 
 
@@ -589,7 +593,7 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
             step + 1, get_perf_timing_str(batch_size, step_train_times),
             lossval))
     if trace_filename is not None and step == -1:
-        log_fn('Dumping trace to', trace_filename)
+        log_fn('Dumping trace to {}'.format(trace_filename))
         trace = timeline.Timeline(step_stats=run_metadata.step_stats)
         with open(trace_filename, 'w') as trace_file:
             trace_file.write(trace.generate_chrome_trace_format(show_memory=True))
