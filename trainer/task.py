@@ -26,7 +26,10 @@ from trainer.global_step import GlobalStepWatcher
 from trainer.cnn_builder import ConvNetBuilder
 
 FLAGS = flags.get_flags()
-log_fn = print
+
+
+def log_fn(string):
+    tf.logging.info(string)
 
 
 def loss_function(logits, labels):

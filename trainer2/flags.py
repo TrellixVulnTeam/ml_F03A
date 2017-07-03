@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 10000,
+    'num_batches', 2000,
     'number of batches to run, excluding warmup'
 )
 
@@ -133,17 +133,17 @@ tf.flags.DEFINE_integer(
     'Number of local steps after which progress is printed out'
 )
 
-tf.flags.DEFINE_integer(
-    'num_intra_threads', 0,
-    'Number of threads to use for intra-op parallelism. If set to 0, the '
-    'system will pick an appropriate number.'
-)
-
-tf.flags.DEFINE_integer(
-    'num_inter_threads', 0,
-    'Number of threads to use for inter-op parallelism. If set to 0, the'
-    ' system will pick an appropriate number.'
-)
+# tf.flags.DEFINE_integer(
+#     'num_intra_threads', 0,
+#     'Number of threads to use for intra-op parallelism. If set to 0, the '
+#     'system will pick an appropriate number.'
+# )
+#
+# tf.flags.DEFINE_integer(
+#     'num_inter_threads', 0,
+#     'Number of threads to use for inter-op parallelism. If set to 0, the'
+#     ' system will pick an appropriate number.'
+# )
 
 #############
 # TRAINING DATA
@@ -154,11 +154,11 @@ tf.flags.DEFINE_string(
     'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
 
-tf.flags.DEFINE_string(
-    'data_name', None,
-    'Name of dataset: imagenet or flowers. If not specified, it is'
-    ' automatically guessed based on --data_dir.'
-)
+# tf.flags.DEFINE_string(
+#     'data_name', None,
+#     'Name of dataset: imagenet or flowers. If not specified, it is'
+#     ' automatically guessed based on --data_dir.'
+# )
 
 tf.flags.DEFINE_string(
     'data_format', 'NHWC',
@@ -216,7 +216,7 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_string(
-    'trace_file', None,
+    'trace_file', 'trace.json',
     'Enable TensorFlow tracing and write trace to this file.'
 )
 
@@ -243,10 +243,10 @@ tf.flags.DEFINE_boolean(
     'whether the variables are staged from the main computation.'
 )
 
-tf.flags.DEFINE_boolean(
-    'force_gpu_compatible', True,
-    'whether to enable force_gpu_compatible in GPU_Options.'
-)
+# tf.flags.DEFINE_boolean(
+#     'force_gpu_compatible', True,
+#     'whether to enable force_gpu_compatible in GPU_Options.'
+# )
 
 # The method for managing variables:
 #   parameter_server: variables are stored on a parameter server that holds
@@ -267,7 +267,7 @@ tf.flags.DEFINE_boolean(
 #       cross_replica_sync=true. Unlike 'replicated', currently never uses
 #       nccl all-reduce for replicating within a server.
 tf.flags.DEFINE_string(
-    'variable_update', 'parameter_server',
+    'variable_update', 'distributed_replicated',
     'The method for managing variables: parameter_server, '
     'replicated, distributed_replicated, independent'
 )
@@ -278,25 +278,25 @@ tf.flags.DEFINE_boolean(
 )
 
 # Distributed training flags.
-tf.flags.DEFINE_string(
-    'job_name', '',
-    'One of "ps", "worker", "".  Empty for local training'
-)
-
-tf.flags.DEFINE_string(
-    'ps_hosts', '',
-    'Comma-separated list of target hosts'
-)
-
-tf.flags.DEFINE_string(
-    'worker_hosts', '',
-    'Comma-separated list of target hosts'
-)
-
-tf.flags.DEFINE_integer(
-    'task_index', 0,
-    'Index of task within the job'
-)
+# tf.flags.DEFINE_string(
+#     'job_name', '',
+#     'One of "ps", "worker", "".  Empty for local training'
+# )
+#
+# tf.flags.DEFINE_string(
+#     'ps_hosts', '',
+#     'Comma-separated list of target hosts'
+# )
+#
+# tf.flags.DEFINE_string(
+#     'worker_hosts', '',
+#     'Comma-separated list of target hosts'
+# )
+#
+# tf.flags.DEFINE_integer(
+#     'task_index', 0,
+#     'Index of task within the job'
+# )
 
 tf.flags.DEFINE_string(
     'server_protocol', 'grpc',

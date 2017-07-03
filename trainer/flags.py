@@ -40,7 +40,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 400,
+    'num_batches', 10000,
     'number of batches to run, excluding warmup'
 )
 
@@ -59,7 +59,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_string(
-    'local_parameter_device', 'gpu',
+    'local_parameter_device', 'cpu',
     'Device to use as parameter server: cpu or gpu. For distributed training,'
     ' it can affect where caching of variables happens.'
 )

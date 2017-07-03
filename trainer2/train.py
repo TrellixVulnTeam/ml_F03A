@@ -87,14 +87,11 @@ class Trainer(object):
             self.global_step_device = self.cpu_device
 
     def run(self):
+        self.print_info()
+
         """Run trainer."""
-        if self.config.job_name in ['ps', 'master']:
-            log_fn('running ps server')
-            self.config.server.join()
-            return
-        else:
-            with tf.Graph().as_default():
-                self.train()
+        with tf.Graph().as_default():
+            self.train()
 
     def train(self):
 
@@ -160,7 +157,7 @@ class Trainer(object):
             log_fn('Running warm up')
             local_step = -1 * self.num_warmup_batches
 
-            if FLAGS.cross_replica_sync and FLAGS.job_name:
+            if FLAGS.cross_replica_sync and self.config.job_name:
                 # In cross-replica sync mode, all workers must run the same number of
                 # local steps, or else the workers running the extra step will block.
                 done_fn = lambda: local_step == self.num_batches
@@ -452,8 +449,7 @@ class Trainer(object):
         num_workers = self.config.cluster.num_tasks('worker')
         with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
             sync_queues = [
-                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]],
-                             shared_name='%s%s' % (name_prefix, i))
+                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
                 for i in range(num_workers)]
             queue_ops = []
             # For each other worker, add an entry in a queue, signaling that it can
@@ -467,9 +463,7 @@ class Trainer(object):
                         queue_ops.append(q.enqueue(token))
 
             # Drain tokens off queue for this worker, one for each other worker.
-            queue_ops.append(
-                sync_queues[self.config.task_index].dequeue_many(
-                    len(sync_queues) - 1))
+            queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
 
             return tf.group(*queue_ops)
 
@@ -483,6 +477,21 @@ class Trainer(object):
             save_model_secs=FLAGS.save_model_secs,
             summary_writer=summary_writer
         )
+
+    def print_info(self):
+        """Print basic information."""
+        log_fn('Task:       %s' % self.config.job_name)
+        log_fn('Batch size:  %s global' % self.batch_size)
+        log_fn('             %s per device' % (self.batch_size / len(self.devices)))
+        log_fn('Devices:     %s' % self.raw_devices)
+        log_fn('Data format: %s' % self.data_format)
+        log_fn('Optimizer:   %s' % FLAGS.optimizer)
+        log_fn('Variables:   %s' % FLAGS.variable_update)
+        if FLAGS.variable_update == 'replicated':
+            log_fn('Use NCCL:    %s' % FLAGS.use_nccl)
+        if FLAGS.staged_vars:
+            log_fn('Staged vars: %s' % FLAGS.staged_vars)
+        log_fn('==========')
 
 
 def add_image_preprocessing(
