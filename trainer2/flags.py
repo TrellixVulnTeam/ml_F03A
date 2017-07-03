@@ -177,43 +177,25 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_boolean(
     'distortions', True,
-    'Enable/disable distortions during image preprocessing. These'
-    ' include bbox and color distortions.'
-)
+    'Enable/disable distortions during image preprocessing. These  include bbox and color distortions.')
 
 # OUTPUT: Summary and Save & load checkpoints.
 
-tf.flags.DEFINE_integer(
-    'summary_verbosity', 1,
-    'Verbosity level for summary ops. Pass 0 to disable both summaries'
-    ' and checkpoints.'
+tf.flags.DEFINE_integer('summary_verbosity', 1,
+                        'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.'
 )
 
 tf.flags.DEFINE_integer(
     'save_summaries_steps', 25,
-    'How often to save summaries for trained models. Pass 0 to disable'
-    ' summaries.'
-)
+    'How often to save summaries for trained models. Pass 0 to disable summaries.')
 
-tf.flags.DEFINE_integer(
-    'save_model_secs', 300,
-    'How often to save trained models. Pass 0 to disable checkpoints'
-)
+tf.flags.DEFINE_integer('save_model_secs', 300, 'How often to save trained models. Pass 0 to disable checkpoints')
 
-tf.flags.DEFINE_string(
-    'train_dir', None,
-    'Path to session checkpoints.'
-)
+tf.flags.DEFINE_string('train_dir', None, 'Path to session checkpoints.')
 
-tf.flags.DEFINE_string(
-    'eval_dir', 'train_eval',
-    'Directory where to write eval event logs.'
-)
+tf.flags.DEFINE_string('eval_dir', 'train_eval', 'Directory where to write eval event logs.')
 
-tf.flags.DEFINE_string(
-    'pretrain_dir', None,
-    'Path to pretrained session checkpoints.'
-)
+tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
 
 # https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
 tf.flags.DEFINE_string(
@@ -223,26 +205,15 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_string(
     'graph_file', None,
-    'Write the model\'s graph definition to this file. Defaults to binary '
-    'format unless filename ends in txt.'
-)
+    'Write the model\'s graph definition to this file. Defaults to binary format unless filename ends in txt.')
 
 # Performance tuning flags.
 
-tf.flags.DEFINE_boolean(
-    'winograd_nonfused', True,
-    'Enable/disable using the Winograd non-fused algorithms.'
-)
+tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
 
-tf.flags.DEFINE_boolean(
-    'sync_on_finish', False,
-    'Enable/disable whether the devices are synced after each step.'
-)
+tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
 
-tf.flags.DEFINE_boolean(
-    'staged_vars', False,
-    'whether the variables are staged from the main computation.'
-)
+tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged from the main computation.')
 
 # tf.flags.DEFINE_boolean(
 #     'force_gpu_compatible', True,
@@ -273,10 +244,7 @@ tf.flags.DEFINE_string(
     'replicated, distributed_replicated, independent'
 )
 
-tf.flags.DEFINE_boolean(
-    'use_nccl', True,
-    'Whether to use nccl all-reduce primitives where possible'
-)
+tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primitives where possible')
 
 # Distributed training flags.
 # tf.flags.DEFINE_string(
@@ -299,26 +267,9 @@ tf.flags.DEFINE_boolean(
 #     'Index of task within the job'
 # )
 
-tf.flags.DEFINE_string(
-    'server_protocol', 'grpc',
-    'protocol for servers'
-)
+tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
 
-tf.flags.DEFINE_boolean(
-    'cross_replica_sync', True,
-    ''
-)
-
-
-# STORAGE
-
-tf.flags.DEFINE_string(
-    'result_storage', None,
-    'Specifies storage option for benchmark results. None means results '
-    'won\'t be stored. cbuild_benchmark_datastore means results will be '
-    'stored in cbuild datastore (note: this option requires special '
-    'pemissions and meant to be used from cbuilds).'
-)
+tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
 
 
 def get_flags():

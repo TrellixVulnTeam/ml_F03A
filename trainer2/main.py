@@ -12,7 +12,7 @@ def main(_):
 
     if config.job_name == 'ps':
         config.server.join()
-    elif config.job_name in ['', 'worker', 'master']:
+    elif config.job_name in ['master', 'worker']:
         Trainer(config=config).run()
     else:
         raise ValueError('Invalid task_type: {}'.format(config.job_name))

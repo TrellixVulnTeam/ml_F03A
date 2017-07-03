@@ -4,7 +4,7 @@ declare -r PROJECT=$(gcloud config list project --format "value(core.project)")
 declare -r BUCKET=gs://vuzii-ml-mlengine
 declare -r DATA_PATH=${BUCKET}/data
 
-declare -r JOB_NAME=test_54
+declare -r JOB_NAME=test_63
 declare -r OUTPUT_PATH=${BUCKET}/${JOB_NAME}
 
 declare -r MODEL_NAME=imagenet

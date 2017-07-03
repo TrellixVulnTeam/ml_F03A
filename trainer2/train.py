@@ -51,6 +51,9 @@ class Trainer(object):
         if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
             raise ValueError('staged_vars for now is only supported with --variable_update=parameter_server')
 
+        if self.config.is_chief and self.config.task_index > 0:
+            raise ValueError('Only one replica of master expected')
+
         if FLAGS.variable_update == 'parameter_server':
             if self.config.job_name:
                 if not FLAGS.staged_vars:
@@ -175,14 +178,14 @@ class Trainer(object):
                     log_fn('Step\tImg/sec\tloss')
                     assert len(step_train_times) == self.num_warmup_batches
                     step_train_times = []  # reset to ignore warm up batches
+
                 if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
                     fetch_summary = summary_op
                 else:
                     fetch_summary = None
+
                 summary_str = benchmark_one_step(
-                    sess, fetches, local_step, self.batch_size,
-                    step_train_times,
-                    self.trace_filename, fetch_summary)
+                    sess, fetches, local_step, self.batch_size, step_train_times, self.trace_filename, fetch_summary)
 
                 if summary_str is not None and self.config.is_chief:
                     sv.summary_computed(sess, summary_str)
@@ -449,26 +452,25 @@ class Trainer(object):
         """
         self.sync_queue_counter += 1
         num_workers = self.config.cluster.num_tasks('worker')
-        with tf.name_scope('FIFO_QUEUE'):
-            with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
-                sync_queues = [
-                    tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
-                    for i in range(num_workers)]
-                queue_ops = []
-                # For each other worker, add an entry in a queue, signaling that it can
-                # finish this step.
-                token = tf.constant(False)
-                with tf.control_dependencies(enqueue_after_list):
-                    for i, q in enumerate(sync_queues):
-                        if i == self.config.task_index:
-                            queue_ops.append(tf.no_op())
-                        else:
-                            queue_ops.append(q.enqueue(token))
+        with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
+            sync_queues = [
+                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
+                for i in range(num_workers)]
+            queue_ops = []
+            # For each other worker, add an entry in a queue, signaling that it can
+            # finish this step.
+            token = tf.constant(False)
+            with tf.control_dependencies(enqueue_after_list):
+                for i, q in enumerate(sync_queues):
+                    if i == self.config.task_index:
+                        queue_ops.append(tf.no_op())
+                    else:
+                        queue_ops.append(q.enqueue(token))
 
-                # Drain tokens off queue for this worker, one for each other worker.
-                queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
+            # Drain tokens off queue for this worker, one for each other worker.
+            queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
 
-            return tf.group(*queue_ops)
+        return tf.group(*queue_ops)
 
     def set_sv(self, is_chief, global_step, summary_writer):
         return tf.train.Supervisor(

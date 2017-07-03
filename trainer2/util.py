@@ -82,8 +82,9 @@ def get_config():
 
     # If TF_CONFIG is not available run local
     if not tf_config:
-        return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
-                      sync_queue_devices=[PS_DEVICE_STR])
+        # return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
+        #               sync_queue_devices=[PS_DEVICE_STR])
+        raise ValueError('Runtime is missing TF_CONFIG')
 
     tf_config_json = json.loads(tf_config)
 
@@ -94,10 +95,15 @@ def get_config():
     ps_tasks = cluster.get('ps')
     worker_tasks = cluster.get('worker') + cluster.get('master')
 
+    # For distributed mode only
+    assert ps_tasks is not None
+    assert worker_tasks is not None
+
     # If cluster information is empty run local
     if job_name is None or task_index is None or ps_tasks is None or worker_tasks is None:
-        return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
-                      sync_queue_devices=[PS_DEVICE_STR])
+        # return Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
+        #               sync_queue_devices=[PS_DEVICE_STR])
+        raise ValueError('Runtime is missing TF_CONFIG')
     else:
         cluster_spec = tf.train.ClusterSpec(cluster)
         server_spec = tf.train.Server(
@@ -113,7 +119,8 @@ def get_config():
         return Config(
             job_name=job_name,
             task_index=task_index,
-            is_chief=(job_name == 'worker' and task_index == 0),
+            # is_chief=(job_name == 'worker' and task_index == 0),
+            is_chief=(job_name == 'master'),
             ps_tasks=ps_tasks,
             worker_tasks=worker_tasks,
             cluster=cluster_spec,
