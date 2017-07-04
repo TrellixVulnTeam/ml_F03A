@@ -121,6 +121,7 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
     else:
         run_options = None
         run_metadata = None
+
     summary_str = None
     start_time = time.time()
     if summary_op is None:

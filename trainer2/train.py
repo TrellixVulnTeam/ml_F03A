@@ -19,11 +19,16 @@ from trainer2 import datasets
 from trainer2 import util
 from trainer2.model import Model
 FLAGS = flags.get_flags()
+WORKER_ARRAY = ['worker']
 
 
 def log_fn(string):
     util.log_fn(string)
 
+
+class Task(object):
+    """Superclass for PS, WORKER and MASTER tasks."""
+    def __init__(self):
 
 class Trainer(object):
     """Class for model training."""
@@ -92,9 +97,15 @@ class Trainer(object):
     def run(self):
         self.print_info()
 
+        if self.config.job_name in ['ps']:
+            log_fn('Running parameter server {}-{}'.format(self.config.job_name, self.config.task_index))
+            self.config.server.join()
+            return
+
         """Run trainer."""
-        with tf.Graph().as_default():
-            self.train()
+        if self.config.job_name in ['master', 'worker']:
+            with tf.Graph().as_default():
+                self.train()
 
     def train(self):
 
@@ -102,7 +113,7 @@ class Trainer(object):
         main_fetch_group = tf.group(*fetches)
 
         execution_barrier = None
-        if self.config.job_name and not FLAGS.cross_replica_sync:
+        if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
             execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
 
         global_step = tf.contrib.framework.get_global_step()
@@ -111,7 +122,7 @@ class Trainer(object):
                 inc_global_step = global_step.assign_add(1)
                 fetches.append(inc_global_step)
 
-        if self.config.job_name and FLAGS.cross_replica_sync:
+        if self.config.job_name in WORKER_ARRAY and FLAGS.cross_replica_sync:
             # Block all replicas until all replicas are ready for next step.
             fetches.append(self.add_sync_queues_and_barrier('sync_queues_step_end_', [main_fetch_group]))
 
@@ -153,48 +164,69 @@ class Trainer(object):
             if self.graph_file is not None:
                 path, filename = os.path.split(self.graph_file)
                 as_text = filename.endswith('txt')
-                log_fn('Writing GraphDef as %s to %s' % (
-                    'text' if as_text else 'binary', self.graph_file))
-                tf.train.write_graph(sess.graph_def, path, filename, as_text)
+                log_fn('Writing GraphDef as %s to %s' % ('text' if as_text else 'binary', self.graph_file))
+                tf.train.write_graph(
+                    sess.graph_def, path,
+                    '{}_{}_{}'.format(self.config.job_name, self.config.task_index, filename), as_text)
 
             log_fn('Running warm up')
             local_step = -1 * self.num_warmup_batches
 
-            if FLAGS.cross_replica_sync and self.config.job_name:
-                # In cross-replica sync mode, all workers must run the same number of
-                # local steps, or else the workers running the extra step will block.
-                done_fn = lambda: local_step == self.num_batches
-            else:
-                done_fn = lambda: global_step_watcher.done()
+            def should_stop():
 
-            while not done_fn():
-                if local_step == 0:
-                    log_fn('Done warm up')
-                    if execution_barrier:
-                        log_fn('Waiting for other replicas to finish warm up')
-                        assert global_step_watcher.start_time == 0
-                        sess.run([execution_barrier])
-
-                    log_fn('Step\tImg/sec\tloss')
-                    assert len(step_train_times) == self.num_warmup_batches
-                    step_train_times = []  # reset to ignore warm up batches
-
-                if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
-                    fetch_summary = summary_op
+                if FLAGS.cross_replica_sync and self.config.job_name in WORKER_ARRAY:
+                    # In cross-replica sync mode, all workers must run the same number of
+                    # local steps, or else the workers running the extra step will block.
+                    _should_stop = local_step == self.num_batches
                 else:
-                    fetch_summary = None
+                    _should_stop = global_step_watcher.done()
 
-                summary_str = benchmark_one_step(
-                    sess, fetches, local_step, self.batch_size, step_train_times, self.trace_filename, fetch_summary)
+                if _should_stop:
+                    log_fn('{}-{} DONE'.format(self.config.job_name, self.config.task_index))
 
-                if summary_str is not None and self.config.is_chief:
-                    sv.summary_computed(sess, summary_str)
-                local_step += 1
+                return _should_stop
+
+            while not should_stop():
+
+                if self.config.job_name in WORKER_ARRAY:
+
+                    if local_step == 0:
+                        log_fn('Done warm up')
+                        if execution_barrier:
+                            log_fn('Waiting for other replicas to finish warm up')
+                            assert global_step_watcher.start_time == 0
+                            sess.run([execution_barrier])
+
+                        log_fn('Step\tImg/sec\tloss')
+                        assert len(step_train_times) == self.num_warmup_batches
+                        step_train_times = []  # reset to ignore warm up batches
+
+                    if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
+                        fetch_summary = summary_op
+                    else:
+                        fetch_summary = None
+
+                    summary_str = benchmark_one_step(
+                        sess, fetches, local_step, self.batch_size, step_train_times, self.trace_filename, fetch_summary)
+
+                    if sv.should_stop():
+                        log_fn('{}-{} should QUIT - SV'.format(self.config.job_name, self.config.task_index))
+
+                    if summary_str is not None and self.config.is_chief:
+                        sv.summary_computed(sess, summary_str)
+                    local_step += 1
+
+                else:
+                    time.sleep(10.00)
+                    log_fn('master alive')
+
             # Waits for the global step to be done, regardless of done_fn.
-            log_fn('{}-{} finished work!'.format(self.config.job_name, self.config.task_index))
+            log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
+            log_fn(execution_barrier)
 
             while not global_step_watcher.done():
                 time.sleep(.25)
+
             images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
             log_fn('-' * 64)
             log_fn('total images/sec: %.2f' % images_per_sec)
@@ -210,6 +242,7 @@ class Trainer(object):
             if execution_barrier:
                 # Wait for other workers to reach the end, so this worker
                 #  doesn't go away underneath them.
+                log_fn('{}-{} reached exec_barrier: '.format(self.config.job_name, self.config.task_index))
                 sess.run([execution_barrier])
         sv.stop()
 
@@ -252,6 +285,7 @@ class Trainer(object):
         staging_delta_ops = []
 
         for dev in range(len(self.devices)):
+            log_fn('tower_{}'.format(dev))
             with self.manager.create_outer_variable_scope(dev), tf.name_scope('tower_%i' % dev) as name_scope:
                 results = self.add_forward_pass_and_gradients(
                     images_splits[dev], labels_splits[dev], nclass,
@@ -356,11 +390,8 @@ class Trainer(object):
             with tf.device(self.cpu_device):
                 images_shape = host_images.get_shape()
                 labels_shape = host_labels.get_shape()
-                gpu_copy_stage = data_flow_ops.StagingArea(
-                    [tf.float32, tf.int32],
-                    shapes=[images_shape, labels_shape])
-                gpu_copy_stage_op = gpu_copy_stage.put(
-                    [host_images, host_labels])
+                gpu_copy_stage = data_flow_ops.StagingArea([tf.float32, tf.int32], shapes=[images_shape, labels_shape])
+                gpu_copy_stage_op = gpu_copy_stage.put([host_images, host_labels])
                 gpu_copy_stage_ops.append(gpu_copy_stage_op)
                 host_images, host_labels = gpu_copy_stage.get()
 
@@ -435,8 +466,7 @@ class Trainer(object):
                 gpu_grad_stage_ops.append(grad_stage_op)
                 grads = grad_stage.get()
 
-            param_refs = self.manager.trainable_variables_on_device(
-                device_num, writable=True)
+            param_refs = self.manager.trainable_variables_on_device(device_num, writable=True)
             gradvars = list(zip(grads, param_refs))
             return loss, gradvars
 
@@ -452,16 +482,18 @@ class Trainer(object):
         """
         self.sync_queue_counter += 1
         num_workers = self.config.cluster.num_tasks('worker')
+        log_fn('SYNC QUEUE: {}'.format(self.config.sync_queue_devices))
         with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
             sync_queues = [
                 tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
                 for i in range(num_workers)]
             queue_ops = []
-            # For each other worker, add an entry in a queue, signaling that it can
-            # finish this step.
+
+            # For each other worker, add an entry in a queue, signaling that it can finish this step.
             token = tf.constant(False)
             with tf.control_dependencies(enqueue_after_list):
                 for i, q in enumerate(sync_queues):
+                    # log_fn('i: {}, q: {}'.format(i, q))
                     if i == self.config.task_index:
                         queue_ops.append(tf.no_op())
                     else:
@@ -492,6 +524,8 @@ class Trainer(object):
         log_fn('Data format: %s' % self.data_format)
         log_fn('Optimizer:   %s' % FLAGS.optimizer)
         log_fn('Variables:   %s' % FLAGS.variable_update)
+        log_fn('Manager:   %s' % self.manager)
+        log_fn('SERVER target:   %s' % self.config.server.target)
         log_fn(self.config.worker_tasks)
         log_fn(self.config.worker_prefix)
         if FLAGS.variable_update == 'replicated':
@@ -567,22 +601,21 @@ def loss_function(logits, labels):
 def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
                        trace_filename, summary_op=None):
     """Advance one step of benchmarking."""
+
     if trace_filename is not None and step == -1:
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
         run_metadata = tf.RunMetadata()
     else:
         run_options = None
         run_metadata = None
+
     summary_str = None
     start_time = time.time()
 
     if summary_op is None:
-        results = sess.run(fetches, options=run_options,
-                           run_metadata=run_metadata)
+        results = sess.run(fetches, options=run_options, run_metadata=run_metadata)
     else:
-        (results, summary_str) = sess.run(
-            [fetches, summary_op], options=run_options,
-            run_metadata=run_metadata)
+        results, summary_str = sess.run([fetches, summary_op], options=run_options, run_metadata=run_metadata)
     if not FLAGS.forward_only:
         lossval = results[1]
     else:
@@ -591,14 +624,13 @@ def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
     train_time = time.time() - start_time
     step_train_times.append(train_time)
     if step >= 0 and (step == 0 or (step + 1) % FLAGS.display_every == 0):
-        log_fn('%i\t%s\t%.3f' % (
-            step + 1, get_perf_timing_str(batch_size, step_train_times),
-            lossval))
+        log_fn('%i\t%s\t%.3f' % (step + 1, get_perf_timing_str(batch_size, step_train_times), lossval))
     if trace_filename is not None and step == -1:
         log_fn('Dumping trace to {}'.format(trace_filename))
-        trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-        with open(trace_filename, 'w') as trace_file:
-            trace_file.write(trace.generate_chrome_trace_format(show_memory=True))
+        # trace = timeline.Timeline(step_stats=run_metadata.step_stats)
+        # chrome_trace = trace.generate_chrome_trace_format(show_dataflow=True, show_memory=True)
+        # with open(trace_filename, 'w') as trace_file:
+        #     trace_file.write(chrome_trace)
     return summary_str
 
 
@@ -610,7 +642,6 @@ def get_perf_timing_str(batch_size, step_train_times, scale=1):
         speed_uncertainty = np.std(speeds) / np.sqrt(float(len(speeds)))
         speed_madstd = 1.4826 * np.median(np.abs(speeds - np.median(speeds)))
         speed_jitter = speed_madstd
-        return 'images/sec: {:.1f} +/- {:.1f} (jitter = {:.1f})'.format(
-            speed_mean, speed_uncertainty, speed_jitter)
+        return 'images/sec: {:.1f} +/- {:.1f} (jitter = {:.1f})'.format(speed_mean, speed_uncertainty, speed_jitter)
     else:
         return 'images/sec: {:.1f}'.format(speed_mean)

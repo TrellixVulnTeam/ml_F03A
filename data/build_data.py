@@ -31,8 +31,8 @@ tf.app.flags.DEFINE_string('data_dir', 'raw_data', 'Raw data directory')
 tf.app.flags.DEFINE_string('output_dir', 'data', 'Output data directory')
 tf.app.flags.DEFINE_string('download_list', 'txt_util/sets_to_download.txt', 'Image-net synsets to download and use')
 
-tf.app.flags.DEFINE_integer('train_shards', 100, 'Number of shards in training TFRecord files.')
-tf.app.flags.DEFINE_integer('validation_shards', 20, 'Number of shards in validation TFRecord files.')
+tf.app.flags.DEFINE_integer('train_shards', 50, 'Number of shards in training TFRecord files.')
+tf.app.flags.DEFINE_integer('validation_shards', 10, 'Number of shards in validation TFRecord files.')
 
 tf.app.flags.DEFINE_integer('num_threads', 2, 'Number of threads to preprocess the images.')
 
@@ -207,7 +207,7 @@ def main(_):
     assert not FLAGS.validation_shards % FLAGS.num_threads, \
         'Please make the FLAGS.num_threads commensurate with FLAGS.validation_shards'
 
-    # _maybe_download_and_extract(FLAGS.download_list)
+    _maybe_download_and_extract(FLAGS.download_list)
 
     # Unpack raw data
     train, valid, u_labels = _unpack_data(FLAGS.data_dir, FLAGS.output_dir)

@@ -88,12 +88,13 @@ def get_config():
 
     tf_config_json = json.loads(tf_config)
 
-    cluster = tf_config_json.get('cluster')
+    cluster = tf_config_json.get('cluster', None)
     job_name = tf_config_json.get('task', {}).get('type')
     task_index = tf_config_json.get('task', {}).get('index')
 
     ps_tasks = cluster.get('ps')
-    worker_tasks = cluster.get('worker') + cluster.get('master')
+    # worker_tasks = cluster.get('worker') + cluster.get('master')
+    worker_tasks = cluster.get('worker')
 
     # For distributed mode only
     assert ps_tasks is not None
@@ -106,6 +107,9 @@ def get_config():
         raise ValueError('Runtime is missing TF_CONFIG')
     else:
         cluster_spec = tf.train.ClusterSpec(cluster)
+        # cluster_spec = tf.train.ClusterSpec(
+        #     {'ps': ps_tasks, 'worker': worker_tasks})
+        tf.logging.info(cluster_spec.as_dict())
         server_spec = tf.train.Server(
             server_or_cluster_def=cluster_spec,
             job_name=job_name,
@@ -113,14 +117,17 @@ def get_config():
             config=create_config_proto(),
             protocol=FLAGS.server_protocol
         )
-        worker_prefix = '/job:{}/task:{}'.format(job_name, task_index)
-        ps_device = tf.train.replica_device_setter(worker_device=worker_prefix + '/cpu:0', cluster=cluster_spec)
+        worker_prefix = '/job:worker/task:{}'.format(job_name, task_index)
+        ps_device = tf.train.replica_device_setter(
+            ps_device='/job:ps',
+            worker_device=worker_prefix,
+            cluster=cluster_spec)
         sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i for i in range(len(ps_tasks))]
         return Config(
             job_name=job_name,
             task_index=task_index,
-            # is_chief=(job_name == 'worker' and task_index == 0),
-            is_chief=(job_name == 'master'),
+            is_chief=(job_name == 'worker' and task_index == 0),
+            # is_chief=(job_name == 'master'),
             ps_tasks=ps_tasks,
             worker_tasks=worker_tasks,
             cluster=cluster_spec,

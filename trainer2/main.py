@@ -9,13 +9,14 @@ from trainer2.util import get_config
 
 def main(_):
     config = get_config()
+    Trainer(config=config).run()
 
-    if config.job_name == 'ps':
-        config.server.join()
-    elif config.job_name in ['master', 'worker']:
-        Trainer(config=config).run()
-    else:
-        raise ValueError('Invalid task_type: {}'.format(config.job_name))
+    # if config.job_name == 'ps':
+    #     config.server.join()
+    # elif config.job_name in ['master', 'worker']:
+    #
+    # else:
+    #     raise ValueError('Invalid task_type: {}'.format(config.job_name))
 
 
 if __name__ == '__main__':

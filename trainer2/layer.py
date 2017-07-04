@@ -34,7 +34,7 @@ def define_scope(f, set_scope=True):
             else:
                 setattr(self, attribute, f(self))
 
-            print('{}: {} => {}'.format(self.name, self.inputs.get_shape(), self._outputs.get_shape()))
+            # print('{}: {} => {}'.format(self.name, self.inputs.get_shape(), self._outputs.get_shape()))
             # with tf.variable_scope(self.name) if set_scope else ExitStack():
             #     setattr(self, attribute, f(self))
             #     print('{}: {} => {}'.format(self.name, self.inputs.get_shape(), self._outputs.get_shape()))

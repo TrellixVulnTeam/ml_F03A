@@ -4,7 +4,7 @@ declare -r PROJECT=$(gcloud config list project --format "value(core.project)")
 declare -r BUCKET=gs://vuzii-ml-mlengine
 declare -r DATA_PATH=${BUCKET}/data
 
-declare -r JOB_NAME=test_63
+declare -r JOB_NAME="test_$(date +%H%M%S)"
 declare -r OUTPUT_PATH=${BUCKET}/${JOB_NAME}
 
 declare -r MODEL_NAME=imagenet
@@ -26,3 +26,5 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 -- \
 --data_dir "${DATA_PATH}/data/train" \
 --train_dir "${BUCKET}/summary/${JOB_NAME}" \
+--trace_file "${BUCKET}/summary/trace/trace.json" \
+--graph_file "${BUCKET}/summary/${JOB_NAME}/graph.txt" \

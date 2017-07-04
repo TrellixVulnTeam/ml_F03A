@@ -96,8 +96,7 @@ class ParamServerDeviceSetter(object):
         if op.type not in ['Variable', 'VariableV2']:
             return self.worker_device
 
-        device_index, _ = min(enumerate(
-            self.ps_sizes), key=operator.itemgetter(1))
+        device_index, _ = min(enumerate(self.ps_sizes), key=operator.itemgetter(1))
         device_name = self.ps_devices[device_index]
         var_size = op.outputs[0].get_shape().num_elements()
         self.ps_sizes[device_index] += var_size
@@ -106,7 +105,7 @@ class ParamServerDeviceSetter(object):
 
 
 class VariableMgr(object):
-    """Abstract superclass for class used by BenchmarkCnn to control variables.
+    """Abstract superclass for class used by Trainer to control variables.
 
       Functions on this class are used to control how variables are created and
       managed, and how gradients are computed and applied.
@@ -198,6 +197,9 @@ class VariableMgr(object):
         else:
             params = tf.trainable_variables()
         return params
+
+    def __repr__(self):
+        return '{self.__class__.__name__}'.format(self=self)
 
 
 class VariableMgrIndependent(VariableMgr):
@@ -509,10 +511,8 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
             caching_devices = self.benchmark_cnn.raw_devices
         else:
             caching_devices = [self.benchmark_cnn.cpu_device]
-        custom_getter = OverrideCachingDevice(
-            caching_devices, self.benchmark_cnn.cpu_device, 1024 * 64)
-        return tf.variable_scope('v', reuse=bool(device_num),
-                                 custom_getter=custom_getter)
+        custom_getter = OverrideCachingDevice(caching_devices, self.benchmark_cnn.cpu_device, 1024 * 64)
+        return tf.variable_scope('v', reuse=bool(device_num), custom_getter=custom_getter)
 
     def preprocess_device_grads(self, device_grads):
         # Returns (gradient_devices, gradient_state)
@@ -525,10 +525,8 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
     def get_devices(self):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
             len(self.benchmark_cnn.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
-        return [tf.train.replica_device_setter(
-            worker_device=d, cluster=self.benchmark_cnn.config.cluster,
-            ps_strategy=ps_strategy)
-            for d in self.benchmark_cnn.raw_devices]
+        return [tf.train.replica_device_setter(worker_device=d, cluster=self.benchmark_cnn.config.cluster,
+                ps_strategy=ps_strategy) for d in self.benchmark_cnn.raw_devices]
 
 
 class VariableMgrDistributedFetchFromStagedPS(VariableMgrDistributedFetchFromPS):

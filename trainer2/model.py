@@ -1,11 +1,9 @@
-# Working example for my blog post at:
 # https://danijar.github.io/structuring-your-tensorflow-models
 import tensorflow as tf
 from trainer2.layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
 
 
 class Model:
-
     def __init__(self, name, layers, activation=tf.nn.relu, train_epochs=10, initial_lr=0.005, l2_loss=None):
         self.name = name
         self.layers = layers

@@ -35,12 +35,12 @@ tf.flags.DEFINE_string(
 #############
 
 tf.flags.DEFINE_integer(
-    'batch_size', 32,
+    'batch_size', 64,
     'batch size per compute device'
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 1000,
+    'num_batches', 500,
     'number of batches to run, excluding warmup'
 )
 
@@ -239,7 +239,7 @@ tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged 
 #       cross_replica_sync=true. Unlike 'replicated', currently never uses
 #       nccl all-reduce for replicating within a server.
 tf.flags.DEFINE_string(
-    'variable_update', 'distributed_replicated',
+    'variable_update', 'parameter_server',
     'The method for managing variables: parameter_server, '
     'replicated, distributed_replicated, independent'
 )
