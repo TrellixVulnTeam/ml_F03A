@@ -25,11 +25,6 @@ tf.flags.DEFINE_boolean(
     'whether use forward-only or training for benchmarking'
 )
 
-tf.flags.DEFINE_string(
-    'model', 'trivial',
-    'name of the model to run'
-)
-
 #############
 # BATCH     #
 #############
@@ -52,11 +47,6 @@ tf.flags.DEFINE_integer(
 #############
 # DEVICES   #
 #############
-
-tf.flags.DEFINE_integer(
-    'num_gpus', 4,
-    'the number of GPUs to run on'
-)
 
 tf.flags.DEFINE_string(
     'local_parameter_device', 'cpu',

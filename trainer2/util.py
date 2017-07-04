@@ -15,6 +15,21 @@ OP_PARALLELISM_THREADS = 0
 class Config(object):
     def __init__(self, job_name, task_index, is_chief, ps_tasks, worker_tasks, cluster=None, server=None,
                  worker_prefix='', ps_device=PS_DEVICE_STR, sync_queue_devices=None, num_cpus=1, num_gpus=0):
+        """
+
+        :param str job_name: Name of job ('worker', 'master' or 'ps' / '' for local)
+        :param int task_index: Task index
+        :param is_chief:
+        :param ps_tasks:
+        :param worker_tasks:
+        :param cluster:
+        :param server:
+        :param worker_prefix:
+        :param ps_device:
+        :param sync_queue_devices:
+        :param num_cpus:
+        :param num_gpus:
+        """
         self.job_name = job_name
         self.task_index = task_index
         self.is_chief = is_chief
@@ -31,11 +46,17 @@ class Config(object):
 
     @classmethod
     def local_config(cls):
+        """
+        Convenience method for creating local config object.
+        """
         return cls(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
                    sync_queue_devices=[PS_DEVICE_STR])
 
     @classmethod
     def ps_server(cls, job_name, task_index, cluster, server):
+        """
+        Convenience method for creating ps server config object.
+        """
         return cls(job_name=job_name, task_index=task_index, is_chief=False, ps_tasks=[''], worker_tasks=[''],
                    cluster=cluster, server=server)
 
@@ -51,9 +72,8 @@ def create_config_proto():
 
 
 def get_cloud_ml_device_count(job_data, job_name):
-
+    # 'name': (cpus, gpus)
     ml_macines = {
-        # 'name': (cpus, gpus)
         'standard': (1, 0),
         'standard_gpu': (1, 1),
         'complex_model_m_gpu': (1, 4)
@@ -89,7 +109,7 @@ def config_factory():
         ps_tasks = cluster_data.get('ps', [''])
         worker_tasks = cluster_data.get('worker', [''])
         job_name = task_data.get('type')
-        task_index = task_data.get('task', {}).get('index')
+        task_index = task_data.get('index')
         num_cpus, num_gpus = get_cloud_ml_device_count(job_data, job_name)
     except AttributeError:
         return Config.local_config()

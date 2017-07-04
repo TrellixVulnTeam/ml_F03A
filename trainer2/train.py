@@ -96,15 +96,15 @@ class Trainer(object):
             self.global_step_device = self.cpu_device
 
     def run(self):
-        # self.print_info()
 
         if self.config.job_name in ['ps']:
-            log_fn('Running parameter server {}-{}'.format(self.config.job_name, self.config.task_index))
-            self.config.server.join()
+            ValueError('PS SHOULD NOT BE HERE')
+            # log_fn('Running parameter server {}-{}'.format(self.config.job_name, self.config.task_index))
+            # self.config.server.join()
             return
 
         """Run trainer."""
-        if self.config.job_name in ['master', 'worker']:
+        if self.config.job_name in ['master', 'worker', '']:
             with tf.Graph().as_default():
                 self.train()
 
@@ -143,10 +143,9 @@ class Trainer(object):
         sv = self.set_sv(self.config.is_chief, global_step, summary_writer)
 
         step_train_times = []
-        with sv.managed_session(
-                master=self.config.server.target if self.config.server else '',
-                config=util.create_config_proto(),
-                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
+        with sv.managed_session(master=self.config.server.target if self.config.server else '',
+                                config=util.create_config_proto(),
+                                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
 
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
@@ -207,8 +206,8 @@ class Trainer(object):
                     else:
                         fetch_summary = None
 
-                    summary_str = benchmark_one_step(
-                        sess, fetches, local_step, self.batch_size, step_train_times, self.trace_filename, fetch_summary)
+                    summary_str = train_step(sess, fetches, local_step, self.batch_size, step_train_times,
+                                             self.trace_filename, fetch_summary)
 
                     if sv.should_stop():
                         log_fn('{}-{} should QUIT - SV'.format(self.config.job_name, self.config.task_index))
@@ -219,7 +218,7 @@ class Trainer(object):
 
                 else:
                     time.sleep(10.00)
-                    log_fn('master alive')
+                    log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
 
             # Waits for the global step to be done, regardless of done_fn.
             log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
@@ -273,14 +272,6 @@ class Trainer(object):
             global_step = tf.contrib.framework.get_or_create_global_step()
 
         with tf.device(self.cpu_device):
-            # nclass, images_splits, labels_splits = add_image_preprocessing(
-            #     dataset=self.dataset,
-            #     input_nchan=input_nchan,
-            #     image_size=64,
-            #     batch_size=self.batch_size,
-            #     num_compute_devices=len(self.devices),
-            #     input_data_type=tf.float32
-            # )
             nclass, images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(self.devices))
 
         update_ops = None
@@ -404,20 +395,15 @@ class Trainer(object):
                     shapes=[images_shape, labels_shape]
                 )
                 # The CPU-to-GPU copy is triggered here.
-                gpu_compute_stage_op = gpu_compute_stage.put(
-                    [host_images, host_labels])
+                gpu_compute_stage_op = gpu_compute_stage.put([host_images, host_labels])
                 images, labels = gpu_compute_stage.get()
                 images = tf.reshape(images, shape=images_shape)
                 gpu_compute_stage_ops.append(gpu_compute_stage_op)
             else:
                 # Minor hack to avoid H2D copy when using synthetic data
-                images = tf.truncated_normal(
-                    host_images.get_shape(),
-                    dtype=input_data_type,
-                    stddev=1e-1,
-                    name='synthetic_images')
-                images = tf.contrib.framework.local_variable(
-                    images, name='gpu_cached_images')
+                images = tf.truncated_normal(host_images.get_shape(), dtype=input_data_type, stddev=1e-1,
+                                              name='synthetic_images')
+                images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
                 labels = host_labels
 
         with tf.device(self.devices[device_num]):
@@ -432,11 +418,6 @@ class Trainer(object):
 
             if input_data_type != data_type:
                 images = tf.cast(images, data_type)
-
-            # network = ConvNetBuilder(images, input_nchan, phase_train, self.data_format, data_type)
-            # self.model_conf.add_inference(network)
-            # # Add the final fully-connected class layer
-            # logits = network.affine(nclass, activation='linear')
 
             logits = self.model.get_layers(images)
 
@@ -484,7 +465,7 @@ class Trainer(object):
         """
         self.sync_queue_counter += 1
         num_workers = self.config.cluster.num_tasks('worker')
-        log_fn('SYNC QUEUE: {}'.format(self.config.sync_queue_devices))
+        # log_fn('SYNC QUEUE: {}'.format(self.config.sync_queue_devices))
         with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
             sync_queues = [
                 tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
@@ -545,7 +526,7 @@ def loss_function(logits, labels):
     return loss
 
 
-def benchmark_one_step(sess, fetches, step, batch_size, step_train_times,
+def train_step(sess, fetches, step, batch_size, step_train_times,
                        trace_filename, summary_op=None):
     """Advance one step of benchmarking."""
 

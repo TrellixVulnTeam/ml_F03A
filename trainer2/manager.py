@@ -617,7 +617,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
             if v.name.startswith(PS_SHADOW_VAR_PREFIX + '/v0/'):
                 prefix = strip_port(
                     v.name[len(PS_SHADOW_VAR_PREFIX + '/v0'):])
-                for i in range(self.benchmark_cnn.num_gpus):
+                for i in range(self.benchmark_cnn.config.num_gpus):
                     name = 'v%s%s' % (i, prefix)
                     if name in local_var_by_name:
                         copy_to = local_var_by_name[name]
