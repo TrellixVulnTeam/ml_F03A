@@ -117,7 +117,7 @@ def get_config():
             config=create_config_proto(),
             protocol=FLAGS.server_protocol
         )
-        worker_prefix = '/job:worker/task:{}'.format(job_name, task_index)
+        worker_prefix = '/job:{}/task:{}'.format(job_name, task_index)
         ps_device = tf.train.replica_device_setter(
             ps_device='/job:ps',
             worker_device=worker_prefix,

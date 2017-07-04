@@ -26,9 +26,9 @@ def log_fn(string):
     util.log_fn(string)
 
 
-class Task(object):
-    """Superclass for PS, WORKER and MASTER tasks."""
-    def __init__(self):
+# class Task(object):
+#     """Superclass for PS, WORKER and MASTER tasks."""
+#     def __init__(self):
 
 class Trainer(object):
     """Class for model training."""
@@ -86,7 +86,8 @@ class Trainer(object):
         else:
             raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)
 
-        self.dataset = datasets.ImgData(FLAGS.data_dir) if FLAGS.data_dir is not None else None
+        # self.dataset = datasets.ImgData(FLAGS.data_dir) if FLAGS.data_dir is not None else None
+        self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
 
         self.devices = self.manager.get_devices()
         if self.config.job_name:
@@ -95,7 +96,7 @@ class Trainer(object):
             self.global_step_device = self.cpu_device
 
     def run(self):
-        self.print_info()
+        # self.print_info()
 
         if self.config.job_name in ['ps']:
             log_fn('Running parameter server {}-{}'.format(self.config.job_name, self.config.task_index))
@@ -272,14 +273,15 @@ class Trainer(object):
             global_step = tf.contrib.framework.get_or_create_global_step()
 
         with tf.device(self.cpu_device):
-            nclass, images_splits, labels_splits = add_image_preprocessing(
-                dataset=self.dataset,
-                input_nchan=input_nchan,
-                image_size=64,
-                batch_size=self.batch_size,
-                num_compute_devices=len(self.devices),
-                input_data_type=tf.float32
-            )
+            # nclass, images_splits, labels_splits = add_image_preprocessing(
+            #     dataset=self.dataset,
+            #     input_nchan=input_nchan,
+            #     image_size=64,
+            #     batch_size=self.batch_size,
+            #     num_compute_devices=len(self.devices),
+            #     input_data_type=tf.float32
+            # )
+            nclass, images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(self.devices))
 
         update_ops = None
         staging_delta_ops = []
