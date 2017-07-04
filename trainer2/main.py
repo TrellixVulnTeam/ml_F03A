@@ -4,11 +4,11 @@ Main script for running training session
 import tensorflow as tf
 
 from trainer2.train import Trainer
-from trainer2.util import get_config
+from trainer2.util import config_factory
 
 
 def main(_):
-    config = get_config()
+    config = config_factory()
     Trainer(config=config).run()
 
     # if config.job_name == 'ps':
