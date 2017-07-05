@@ -18,7 +18,7 @@ from trainer2 import datasets
 from trainer2 import util
 from trainer2.model import Model
 FLAGS = flags.get_flags()
-WORKER_ARRAY = ['worker']
+WORKER_ARRAY = ['worker', 'master']
 
 
 def log_fn(string):
@@ -157,8 +157,10 @@ class Trainer(object):
             init_global_step = 0
 
             global_step_watcher = GlobalStepWatcher(
-                sess, global_step, len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
-                len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
+                sess=sess,
+                global_step_op=global_step,
+                start_at_global_step=len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
+                end_at_global_step=len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
 
             if self.graph_file is not None and self.config.is_chief:
@@ -217,14 +219,14 @@ class Trainer(object):
                     local_step += 1
 
                 else:
-                    time.sleep(0.5)
+                    time.sleep(1.0)
                     assert self.config.is_chief
                     assert summary_writer is not None
                     if global_step_watcher.value() > 100 and not should_stop() and not sv.should_stop():
                         # summary_str = sess.run(summary_op)
                         # if not sv.should_stop():
                         sv.summary_computed(sess, None)
-                        log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
+                    log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
 
             # Waits for the global step to be done, regardless of done_fn.
             log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
@@ -469,7 +471,13 @@ class Trainer(object):
           an op that should be used as control dependency before starting next step.
         """
         self.sync_queue_counter += 1
-        num_workers = self.config.cluster.num_tasks('worker')
+
+        # Handle case where master is only worker
+        try:
+            num_workers = self.config.cluster.num_tasks('worker') + 1
+        except ValueError:
+            num_workers = 1
+
         # log_fn('SYNC QUEUE: {}'.format(self.config.sync_queue_devices))
         with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
             sync_queues = [
@@ -482,13 +490,16 @@ class Trainer(object):
             with tf.control_dependencies(enqueue_after_list):
                 for i, q in enumerate(sync_queues):
                     # log_fn('i: {}, q: {}'.format(i, q))
-                    if i == self.config.task_index:
+                    if self.config.job_name == 'master' and i == 0:
+                        queue_ops.append(tf.no_op())
+                    elif self.config.job_name == 'worker' and i == self.config.task_index + 1:
                         queue_ops.append(tf.no_op())
                     else:
                         queue_ops.append(q.enqueue(token))
 
             # Drain tokens off queue for this worker, one for each other worker.
-            queue_ops.append(sync_queues[self.config.task_index].dequeue_many(len(sync_queues) - 1))
+            temp_index = self.config.task_index if self.config.job_name == 'master' else self.config.task_index + 1
+            queue_ops.append(sync_queues[temp_index].dequeue_many(len(sync_queues) - 1))
 
         return tf.group(*queue_ops)
 
@@ -544,7 +555,6 @@ def train_step(sess, fetches, step, batch_size, step_train_times,
 
     summary_str = None
     start_time = time.time()
-    assert summary_op is None
 
     if summary_op is None:
         results = sess.run(fetches, options=run_options, run_metadata=run_metadata)
