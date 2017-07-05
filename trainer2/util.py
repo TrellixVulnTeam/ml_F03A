@@ -127,7 +127,8 @@ def config_factory():
     sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i for i in range(len(ps_tasks))]
 
     # Is current task Session chief:
-    is_chief = job_name == 'worker' and task_index == 0
+    # is_chief = job_name == 'worker' and task_index == 0
+    is_chief = job_name == 'master'
 
     return Config(job_name, task_index, is_chief, ps_tasks, worker_tasks, cluster, server, worker_prefix, ps_device,
                   sync_queue_devices, num_cpus, num_gpus)

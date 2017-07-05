@@ -138,9 +138,10 @@ class Trainer(object):
 
         summary_writer = None
         if self.config.is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
+            log_fn('{}-{} CHIEF => SUMMARY_WRITER'.format(self.config.job_name, self.config.task_index))
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir, tf.get_default_graph())
 
-        sv = self.set_sv(self.config.is_chief, global_step, summary_writer)
+        sv = self.set_sv(global_step, summary_writer)
 
         step_train_times = []
         with sv.managed_session(master=self.config.server.target if self.config.server else '',
@@ -156,12 +157,11 @@ class Trainer(object):
             init_global_step = 0
 
             global_step_watcher = GlobalStepWatcher(
-                sess, global_step,
-                len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
+                sess, global_step, len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
                 len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
 
-            if self.graph_file is not None:
+            if self.graph_file is not None and self.config.is_chief:
                 path, filename = os.path.split(self.graph_file)
                 as_text = filename.endswith('txt')
                 log_fn('Writing GraphDef as %s to %s' % ('text' if as_text else 'binary', self.graph_file))
@@ -180,10 +180,10 @@ class Trainer(object):
                     _should_stop = local_step == self.num_batches
                 else:
                     _should_stop = global_step_watcher.done()
+                    log_fn('master should {}stop'.format('' if _should_stop else 'not '))
 
-                if _should_stop:
-                    log_fn('{}-{} DONE'.format(self.config.job_name, self.config.task_index))
-
+                # if _should_stop:
+                #     log_fn('{}-{} DONE'.format(self.config.job_name, self.config.task_index))
                 return _should_stop
 
             while not should_stop():
@@ -217,15 +217,20 @@ class Trainer(object):
                     local_step += 1
 
                 else:
-                    time.sleep(10.00)
-                    log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
+                    time.sleep(0.5)
+                    assert self.config.is_chief
+                    assert summary_writer is not None
+                    if global_step_watcher.value() > 100 and not should_stop() and not sv.should_stop():
+                        # summary_str = sess.run(summary_op)
+                        # if not sv.should_stop():
+                        sv.summary_computed(sess, None)
+                        log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
 
             # Waits for the global step to be done, regardless of done_fn.
             log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
-            log_fn(execution_barrier)
 
             while not global_step_watcher.done():
-                time.sleep(.25)
+                time.sleep(1.0)
 
             images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
             log_fn('-' * 64)
@@ -487,9 +492,9 @@ class Trainer(object):
 
         return tf.group(*queue_ops)
 
-    def set_sv(self, is_chief, global_step, summary_writer):
+    def set_sv(self, global_step, summary_writer):
         return tf.train.Supervisor(
-            is_chief=is_chief,
+            is_chief=self.config.is_chief,
             logdir=FLAGS.train_dir,
             saver=tf.train.Saver(tf.global_variables()),
             global_step=global_step,
@@ -539,6 +544,7 @@ def train_step(sess, fetches, step, batch_size, step_train_times,
 
     summary_str = None
     start_time = time.time()
+    assert summary_op is None
 
     if summary_op is None:
         results = sess.run(fetches, options=run_options, run_metadata=run_metadata)
