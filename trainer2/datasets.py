@@ -38,7 +38,7 @@ class DatasetFactory(object):
 class Dataset(object):
     """Abstract class for cnn benchmarks dataset."""
 
-    def __init__(self, name, data_dir=None, image_size=32):
+    def __init__(self, name, data_dir=None, image_size=64):
         self.name = name
         if data_dir is None and isinstance(self, (ImgData, ImagenetData)):
             raise ValueError('Data directory not specified')
@@ -46,6 +46,7 @@ class Dataset(object):
         self.image_size = image_size
         self.input_data_type = tf.float32
         self.resize_method = FLAGS.resize_method
+        self.synthetic = False
 
     def tf_record_pattern(self, subset):
         return os.path.join(self.data_dir, '%s-*-of-*' % subset)
@@ -104,12 +105,13 @@ class SyntheticData(Dataset):
     def __init__(self, data_dir=None):
         super(SyntheticData, self).__init__('synthetic-data', data_dir)
         self.input_channels = 3
+        self.synthetic = True
 
     def num_classes(self):
         return 1000
 
-    def num_examples_per_epoch(self, subset):
-        return 1000
+    def num_examples_per_epoch(self, subset='train'):
+        pass
 
     def preprocess(self, batch_size, num_comp_devices, train=True):
         """Add image Preprocessing ops to tf graph."""

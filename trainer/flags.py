@@ -185,7 +185,7 @@ tf.flags.DEFINE_boolean(
 # OUTPUT: Summary and Save & load checkpoints.
 
 tf.flags.DEFINE_integer(
-    'summary_verbosity', 1,
+    'write_summary', 1,
     'Verbosity level for summary ops. Pass 0 to disable both summaries'
     ' and checkpoints.'
 )

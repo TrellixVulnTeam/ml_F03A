@@ -19,7 +19,7 @@ class Config(object):
 
         :param str job_name: Name of job ('worker', 'master' or 'ps' / '' for local)
         :param int task_index: Task index
-        :param is_chief:
+        :param bool is_chief: Is current task chief
         :param ps_tasks:
         :param worker_tasks:
         :param cluster:

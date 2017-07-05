@@ -140,7 +140,8 @@ tf.flags.DEFINE_integer(
 #############
 
 tf.flags.DEFINE_string(
-    'data_dir', '../data/data/train',
+    # 'data_dir', '../data/data/train',
+    'data_dir', None,
     'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
 
@@ -171,8 +172,9 @@ tf.flags.DEFINE_boolean(
 
 # OUTPUT: Summary and Save & load checkpoints.
 
-tf.flags.DEFINE_integer('summary_verbosity', 1,
-                        'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.'
+tf.flags.DEFINE_bool(
+    'write_summary', True,
+    'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.'
 )
 
 tf.flags.DEFINE_integer(

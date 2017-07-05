@@ -433,7 +433,7 @@ class BenchmarkCNN(object):
         summary_op = tf.summary.merge_all()
         is_chief = (not self.job_name or self.task_index == 0)
         summary_writer = None
-        if is_chief and FLAGS.summary_verbosity and FLAGS.train_dir \
+        if is_chief and FLAGS.write_summary and FLAGS.train_dir \
                 and FLAGS.save_summaries_steps > 0:
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir,
                                                    tf.get_default_graph())

@@ -9,7 +9,7 @@ import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.platform import gfile
-from tensorflow.python.client import timeline
+# from tensorflow.python.client import timeline
 
 from trainer2 import manager
 from trainer2 import flags
@@ -17,6 +17,8 @@ from trainer2.global_step import GlobalStepWatcher
 from trainer2 import datasets
 from trainer2 import util
 from trainer2.model import Model
+from trainer2.supervisor import Supervisor
+
 FLAGS = flags.get_flags()
 WORKER_ARRAY = ['worker', 'master']
 
@@ -25,15 +27,12 @@ def log_fn(string):
     util.log_fn(string)
 
 
-# class Task(object):
-#     """Superclass for PS, WORKER and MASTER tasks."""
-#     def __init__(self):
-
 class Trainer(object):
     """Class for model training."""
 
     def __init__(self, config):
         self.config = config
+        self.supervisor = None
         self.model = Model.trial()
         self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
@@ -99,8 +98,6 @@ class Trainer(object):
 
         if self.config.job_name in ['ps']:
             ValueError('PS SHOULD NOT BE HERE')
-            # log_fn('Running parameter server {}-{}'.format(self.config.job_name, self.config.task_index))
-            # self.config.server.join()
             return
 
         """Run trainer."""
@@ -137,16 +134,13 @@ class Trainer(object):
         summary_op = tf.summary.merge_all()
 
         summary_writer = None
-        if self.config.is_chief and FLAGS.summary_verbosity and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
-            log_fn('{}-{} CHIEF => SUMMARY_WRITER'.format(self.config.job_name, self.config.task_index))
+        if self.config.is_chief and FLAGS.write_summary and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
             summary_writer = tf.summary.FileWriter(FLAGS.train_dir, tf.get_default_graph())
 
-        sv = self.set_sv(global_step, summary_writer)
+        self.supervisor = Supervisor.init(self.config.is_chief, global_step)
 
         step_train_times = []
-        with sv.managed_session(master=self.config.server.target if self.config.server else '',
-                                config=util.create_config_proto(),
-                                start_standard_services=FLAGS.summary_verbosity > 0) as sess:
+        with self.supervisor.managed_session(self.config.server) as sess:
 
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
@@ -190,43 +184,31 @@ class Trainer(object):
 
             while not should_stop():
 
-                if self.config.job_name in WORKER_ARRAY:
+                if local_step == 0:
+                    log_fn('Done warm up')
+                    if execution_barrier:
+                        log_fn('Waiting for other replicas to finish warm up')
+                        assert global_step_watcher.start_time == 0
+                        sess.run([execution_barrier])
 
-                    if local_step == 0:
-                        log_fn('Done warm up')
-                        if execution_barrier:
-                            log_fn('Waiting for other replicas to finish warm up')
-                            assert global_step_watcher.start_time == 0
-                            sess.run([execution_barrier])
+                    log_fn('Step\tImg/sec\tloss')
+                    assert len(step_train_times) == self.num_warmup_batches
+                    step_train_times = []  # reset to ignore warm up batches
 
-                        log_fn('Step\tImg/sec\tloss')
-                        assert len(step_train_times) == self.num_warmup_batches
-                        step_train_times = []  # reset to ignore warm up batches
-
-                    if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
-                        fetch_summary = summary_op
-                    else:
-                        fetch_summary = None
-
-                    summary_str = train_step(sess, fetches, local_step, self.batch_size, step_train_times,
-                                             self.trace_filename, fetch_summary)
-
-                    if sv.should_stop():
-                        log_fn('{}-{} should QUIT - SV'.format(self.config.job_name, self.config.task_index))
-
-                    if summary_str is not None and self.config.is_chief:
-                        sv.summary_computed(sess, summary_str)
-                    local_step += 1
-
+                if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
+                    fetch_summary = summary_op
                 else:
-                    time.sleep(1.0)
-                    assert self.config.is_chief
-                    assert summary_writer is not None
-                    if global_step_watcher.value() > 100 and not should_stop() and not sv.should_stop():
-                        # summary_str = sess.run(summary_op)
-                        # if not sv.should_stop():
-                        sv.summary_computed(sess, None)
-                    log_fn('master alive - Global step: {}'.format(global_step_watcher.value()))
+                    fetch_summary = None
+
+                summary_str = train_step(sess, fetches, local_step, self.batch_size, step_train_times,
+                                         self.trace_filename, fetch_summary)
+
+                if self.supervisor.should_stop():
+                    log_fn('{}-{} should QUIT - SV'.format(self.config.job_name, self.config.task_index))
+
+                if summary_str is not None and self.config.is_chief:
+                    self.supervisor.summary_computed(sess, summary_str)
+                local_step += 1
 
             # Waits for the global step to be done, regardless of done_fn.
             log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
@@ -244,14 +226,14 @@ class Trainer(object):
                 checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
                 if not gfile.Exists(FLAGS.train_dir):
                     gfile.MakeDirs(FLAGS.train_dir)
-                sv.saver.save(sess, checkpoint_path, global_step)
+                self.supervisor.saver.save(sess, checkpoint_path, global_step)
 
             if execution_barrier:
                 # Wait for other workers to reach the end, so this worker
                 #  doesn't go away underneath them.
                 log_fn('{}-{} reached exec_barrier: '.format(self.config.job_name, self.config.task_index))
                 sess.run([execution_barrier])
-        sv.stop()
+        self.supervisor.stop()
 
     def build_graph(self):
 
@@ -285,7 +267,7 @@ class Trainer(object):
         staging_delta_ops = []
 
         for dev in range(len(self.devices)):
-            log_fn('tower_{}'.format(dev))
+
             with self.manager.create_outer_variable_scope(dev), tf.name_scope('tower_%i' % dev) as name_scope:
                 results = self.add_forward_pass_and_gradients(
                     images_splits[dev], labels_splits[dev], nclass,
@@ -348,9 +330,8 @@ class Trainer(object):
                 gradient_clip = FLAGS.gradient_clip
                 learning_rate = self.model.learning_rate
 
-                if self.dataset and FLAGS.num_epochs_per_decay > 0:
-                    num_batches_per_epoch = (
-                        self.dataset.num_examples_per_epoch() / self.batch_size)
+                if (not self.dataset.synthetic) and FLAGS.num_epochs_per_decay > 0:
+                    num_batches_per_epoch = (self.dataset.num_examples_per_epoch() / self.batch_size)
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
@@ -370,7 +351,7 @@ class Trainer(object):
         train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
 
         with tf.device(self.cpu_device):
-            if self.config.task_index == 0 and FLAGS.summary_verbosity > 0:
+            if self.config.task_index == 0 and FLAGS.write_summary > 0:
                 tf.summary.scalar('learning_rate', learning_rate)
                 tf.summary.scalar('total_loss', total_loss)
                 for grad, var in avg_grads:
@@ -409,7 +390,7 @@ class Trainer(object):
             else:
                 # Minor hack to avoid H2D copy when using synthetic data
                 images = tf.truncated_normal(host_images.get_shape(), dtype=input_data_type, stddev=1e-1,
-                                              name='synthetic_images')
+                                             name='synthetic_images')
                 images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
                 labels = host_labels
 
@@ -503,17 +484,6 @@ class Trainer(object):
 
         return tf.group(*queue_ops)
 
-    def set_sv(self, global_step, summary_writer):
-        return tf.train.Supervisor(
-            is_chief=self.config.is_chief,
-            logdir=FLAGS.train_dir,
-            saver=tf.train.Saver(tf.global_variables()),
-            global_step=global_step,
-            summary_op=None,
-            save_model_secs=FLAGS.save_model_secs,
-            summary_writer=summary_writer
-        )
-
     def print_info(self):
         """Print basic information."""
         log_fn('Task:       %s' % self.config.job_name)
@@ -536,14 +506,13 @@ class Trainer(object):
 
 def loss_function(logits, labels):
     # global cross_entropy # HACK TESTING
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=labels, name='xentropy')
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='xentropy')
     loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     return loss
 
 
 def train_step(sess, fetches, step, batch_size, step_train_times,
-                       trace_filename, summary_op=None):
+               trace_filename, summary_op=None):
     """Advance one step of benchmarking."""
 
     if trace_filename is not None and step == -1:
