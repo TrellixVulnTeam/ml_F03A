@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import os
 import time
 
 import six
@@ -8,7 +7,6 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops
-from tensorflow.python.platform import gfile
 # from tensorflow.python.client import timeline
 
 from trainer2 import manager
@@ -42,50 +40,14 @@ class Trainer(object):
         min_autotune_warmup = 5 * autotune_threshold * autotune_threshold
         self.num_warmup_batches = FLAGS.num_warmup_batches if FLAGS.num_warmup_batches else max(10, min_autotune_warmup)
 
-        self.graph_file = FLAGS.graph_file
-        self.resize_method = FLAGS.resize_method
         self.sync_queue_counter = 0
-
         self.batch_size = self.model.batch_size * self.config.num_gpus
 
         self.cpu_device = '%s/cpu:0' % self.config.worker_prefix
         self.raw_devices = ['%s/%s:%i' % (self.config.worker_prefix, FLAGS.device, i)
                             for i in range(self.config.num_gpus)]
 
-        if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
-            raise ValueError('staged_vars for now is only supported with --variable_update=parameter_server')
-
-        if self.config.is_chief and self.config.task_index > 0:
-            raise ValueError('Only one replica of master expected')
-
-        if FLAGS.variable_update == 'parameter_server':
-            if self.config.job_name:
-                if not FLAGS.staged_vars:
-                    self.manager = manager.VariableMgrDistributedFetchFromPS(self)
-                else:
-                    self.manager = manager.VariableMgrDistributedFetchFromStagedPS(self)
-            else:
-                if not FLAGS.staged_vars:
-                    self.manager = manager.VariableMgrLocalFetchFromPS(self)
-                else:
-                    self.manager = manager.VariableMgrLocalFetchFromStagedPS(self)
-        elif FLAGS.variable_update == 'replicated':
-            if self.config.job_name:
-                raise ValueError('Invalid --variable_update in distributed mode: %s' %
-                                 FLAGS.variable_update)
-            self.manager = manager.VariableMgrLocalReplicated(self, FLAGS.use_nccl)
-        elif FLAGS.variable_update == 'distributed_replicated':
-            if not self.config.job_name:
-                raise ValueError('Invalid --variable_update in local mode: %s' % FLAGS.variable_update)
-            self.manager = manager.VariableMgrDistributedReplicated(self)
-        elif FLAGS.variable_update == 'independent':
-            if self.config.job_name:
-                raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
-            self.manager = manager.VariableMgrIndependent(self)
-        else:
-            raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)
-
-        # self.dataset = datasets.ImgData(FLAGS.data_dir) if FLAGS.data_dir is not None else None
+        self.manager = manager.manager_factory(self)
         self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
 
         self.devices = self.manager.get_devices()

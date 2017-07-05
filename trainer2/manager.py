@@ -27,7 +27,48 @@ from tensorflow.contrib import nccl
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import data_flow_ops
 
+from trainer2.flags import get_flags
+
 PS_SHADOW_VAR_PREFIX = 'ps_var'
+FLAGS = get_flags()
+
+
+def manager_factory(self):
+    """
+
+    :return: VariableMgr
+    """
+    job_name = self.config.job_name
+
+    if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
+        raise ValueError('staged_vars for now is only supported with --variable_update=parameter_server')
+
+    # variable_scheme = FLAGS.variable_updat
+    if FLAGS.variable_update == 'parameter_server':
+        if job_name:
+            if not FLAGS.staged_vars:
+                return VariableMgrDistributedFetchFromPS(self)
+            else:
+                return VariableMgrDistributedFetchFromStagedPS(self)
+        else:
+            if not FLAGS.staged_vars:
+                return VariableMgrLocalFetchFromPS(self)
+            else:
+                return VariableMgrLocalFetchFromStagedPS(self)
+    elif FLAGS.variable_update == 'replicated':
+        if job_name:
+            raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
+        return VariableMgrLocalReplicated(self, FLAGS.use_nccl)
+    elif FLAGS.variable_update == 'distributed_replicated':
+        if not job_name:
+            raise ValueError('Invalid --variable_update in local mode: %s' % FLAGS.variable_update)
+        return VariableMgrDistributedReplicated(self)
+    elif FLAGS.variable_update == 'independent':
+        if job_name:
+            raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
+        return VariableMgrIndependent(self)
+    else:
+        raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)
 
 
 # To be used with custom_getter on tf.get_variable.
@@ -430,10 +471,8 @@ class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
         return True
 
     def create_outer_variable_scope(self, device_num):
-        self._custom_getter = StagedVariableGetter(
-            device_num, self.benchmark_cnn.raw_devices, None, self)
-        return tf.variable_scope(
-            'v', reuse=bool(device_num), custom_getter=self._custom_getter)
+        self._custom_getter = StagedVariableGetter(device_num, self.benchmark_cnn.raw_devices, None, self)
+        return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
 
     def trainable_variables_on_device(self, device_num, writable=False):
         return self._custom_getter.trainable_variables_on_device(

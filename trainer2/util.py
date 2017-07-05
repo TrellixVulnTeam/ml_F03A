@@ -44,6 +44,9 @@ class Config(object):
         self.num_cpus = num_cpus
         self.num_gpus = num_gpus
 
+        if is_chief and task_index > 0:
+            raise ValueError('Invalid master configuration.')
+
     @classmethod
     def local_config(cls):
         """
