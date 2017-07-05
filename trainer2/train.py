@@ -133,14 +133,10 @@ class Trainer(object):
         local_var_init_op = tf.local_variables_initializer()
         summary_op = tf.summary.merge_all()
 
-        summary_writer = None
-        if self.config.is_chief and FLAGS.write_summary and FLAGS.train_dir and FLAGS.save_summaries_steps > 0:
-            summary_writer = tf.summary.FileWriter(FLAGS.train_dir, tf.get_default_graph())
-
         self.supervisor = Supervisor.init(self.config.is_chief, global_step)
 
         step_train_times = []
-        with self.supervisor.managed_session(self.config.server) as sess:
+        with self.supervisor.run_session(self.config.server) as sess:
 
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
@@ -157,13 +153,7 @@ class Trainer(object):
                 end_at_global_step=len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
 
-            if self.graph_file is not None and self.config.is_chief:
-                path, filename = os.path.split(self.graph_file)
-                as_text = filename.endswith('txt')
-                log_fn('Writing GraphDef as %s to %s' % ('text' if as_text else 'binary', self.graph_file))
-                tf.train.write_graph(
-                    sess.graph_def, path,
-                    '{}_{}_{}'.format(self.config.job_name, self.config.task_index, filename), as_text)
+            self.supervisor.write_graph_file(sess, self.config.job_name)
 
             log_fn('Running warm up')
             local_step = -1 * self.num_warmup_batches
@@ -176,10 +166,7 @@ class Trainer(object):
                     _should_stop = local_step == self.num_batches
                 else:
                     _should_stop = global_step_watcher.done()
-                    log_fn('master should {}stop'.format('' if _should_stop else 'not '))
 
-                # if _should_stop:
-                #     log_fn('{}-{} DONE'.format(self.config.job_name, self.config.task_index))
                 return _should_stop
 
             while not should_stop():
@@ -195,7 +182,7 @@ class Trainer(object):
                     assert len(step_train_times) == self.num_warmup_batches
                     step_train_times = []  # reset to ignore warm up batches
 
-                if summary_writer and (local_step + 1) % FLAGS.save_summaries_steps == 0:
+                if self.supervisor.summary_writer and (local_step + 1) % self.supervisor.save_steps == 0:
                     fetch_summary = summary_op
                 else:
                     fetch_summary = None
@@ -222,11 +209,12 @@ class Trainer(object):
             log_fn('-' * 64)
 
             # Save the model checkpoint.
-            if FLAGS.train_dir is not None and self.config.is_chief:
-                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-                if not gfile.Exists(FLAGS.train_dir):
-                    gfile.MakeDirs(FLAGS.train_dir)
-                self.supervisor.saver.save(sess, checkpoint_path, global_step)
+            # if FLAGS.train_dir is not None and self.config.is_chief:
+            #     checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+            #     if not gfile.Exists(FLAGS.train_dir):
+            #         gfile.MakeDirs(FLAGS.train_dir)
+            #     self.supervisor.saver.save(sess, checkpoint_path, global_step)
+            self.supervisor.save_model(sess, global_step)
 
             if execution_barrier:
                 # Wait for other workers to reach the end, so this worker
