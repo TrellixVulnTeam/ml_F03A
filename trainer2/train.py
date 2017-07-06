@@ -2,27 +2,19 @@ from __future__ import print_function
 
 import time
 
-import six
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python.ops import data_flow_ops
-# from tensorflow.python.client import timeline
-
-from trainer2 import manager
-from trainer2 import flags
-from trainer2.global_step import GlobalStepWatcher
 from trainer2 import datasets
+from trainer2 import flags
+from trainer2 import manager
 from trainer2 import util
+from trainer2.global_step import GlobalStepWatcher
 from trainer2.model import Model
 from trainer2.supervisor import Supervisor
 
 FLAGS = flags.get_flags()
 WORKER_ARRAY = ['worker', 'master']
-
-
-def log_fn(string):
-    util.log_fn(string)
 
 
 class Trainer(object):
@@ -51,6 +43,12 @@ class Trainer(object):
         if self.config.job_name in ['master', 'worker', '']:
             with tf.Graph().as_default():
                 self.train()
+
+    def log(self, string, debug_level=1, chief_only=False):
+        if chief_only and self.config.is_chief:
+            if FLAGS.debug_level > 3:
+                string = '{}-{}: {}'.format(self.config.job_name, self.config.task_index, string)
+            util.log_fn(string, debug_level)
 
     def train(self):
 
@@ -101,7 +99,7 @@ class Trainer(object):
 
             self.supervisor.write_graph_file(sess, self.config.job_name)
 
-            log_fn('Running warm up')
+            self.log('Running warm up', 2, True)
             local_step = -1 * self.num_warmup_batches
 
             def should_stop():
@@ -114,13 +112,14 @@ class Trainer(object):
             while not should_stop():
 
                 if local_step == 0:
-                    log_fn('Done warm up')
+                    self.log('Done warm up', 3, True)
+
                     if execution_barrier:
-                        log_fn('Waiting for other replicas to finish warm up')
+                        self.log('Waiting for other replicas to finish warm up', 3)
                         assert global_step_watcher.start_time == 0
                         sess.run([execution_barrier])
 
-                    log_fn('Step\tImg/sec\tloss')
+                    self.log('Step\tImg/sec\tloss', 0)
                     assert len(step_train_times) == self.num_warmup_batches
                     step_train_times = []  # reset to ignore warm up batches
 
@@ -137,15 +136,15 @@ class Trainer(object):
                 local_step += 1
 
             # Waits for the global step to be done, regardless of done_fn.
-            log_fn('{}-{} finished work: '.format(self.config.job_name, self.config.task_index))
+            self.log('{}-{} finished work: '.format(self.config.job_name, self.config.task_index), 5)
 
             while not global_step_watcher.done():
                 time.sleep(1.0)
 
             images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
-            log_fn('-' * 64)
-            log_fn('total images/sec: %.2f' % images_per_sec)
-            log_fn('-' * 64)
+            self.log('-' * 64)
+            self.log('total images/sec: %.2f' % images_per_sec)
+            self.log('-' * 64)
 
             self.supervisor.save_model(sess, global_step)
 
@@ -156,22 +155,22 @@ class Trainer(object):
 
     def print_info(self):
         """Print basic information."""
-        log_fn('Task:       %s' % self.config.job_name)
-        log_fn('Batch size:  %s global' % self.batch_size)
-        log_fn('             %s per device' % (self.batch_size / len(self.devices)))
-        log_fn('Devices:     %s' % self.config.raw_devices)
-        log_fn('Data format: %s' % self.data_format)
-        log_fn('Optimizer:   %s' % FLAGS.optimizer)
-        log_fn('Variables:   %s' % FLAGS.variable_update)
-        log_fn('Manager:   %s' % self.manager)
-        log_fn('SERVER target:   %s' % self.config.server.target)
-        log_fn(self.config.worker_tasks)
-        log_fn(self.config.worker_prefix)
+        self.log('Task:       %s' % self.config.job_name)
+        self.log('Batch size:  %s global' % self.batch_size)
+        self.log('             %s per device' % (self.batch_size / len(self.devices)))
+        self.log('Devices:     %s' % self.config.raw_devices)
+        self.log('Data format: %s' % self.data_format)
+        self.log('Optimizer:   %s' % FLAGS.optimizer)
+        self.log('Variables:   %s' % FLAGS.variable_update)
+        self.log('Manager:   %s' % self.manager)
+        self.log('SERVER target:   %s' % self.config.server.target)
+        self.log(self.config.worker_tasks)
+        self.log(self.config.worker_prefix)
         if FLAGS.variable_update == 'replicated':
-            log_fn('Use NCCL:    %s' % FLAGS.use_nccl)
+            self.log('Use NCCL:    %s' % FLAGS.use_nccl)
         if FLAGS.staged_vars:
-            log_fn('Staged vars: %s' % FLAGS.staged_vars)
-        log_fn('==========')
+            self.log('Staged vars: %s' % FLAGS.staged_vars)
+        self.log('==========')
 
 
 def train_step(sess, fetches, step, batch_size, step_train_times, trace_filename, summary_op=None):
@@ -195,9 +194,9 @@ def train_step(sess, fetches, step, batch_size, step_train_times, trace_filename
     train_time = time.time() - start_time
     step_train_times.append(train_time)
     if step >= 0 and (step == 0 or (step + 1) % FLAGS.display_every == 0):
-        log_fn('%i\t%s\t%.3f' % (step + 1, get_perf_timing_str(batch_size, step_train_times), lossval))
+        util.log_fn('%i\t%s\t%.3f' % (step + 1, get_perf_timing_str(batch_size, step_train_times), lossval), 0)
     if trace_filename is not None and step == -1:
-        log_fn('Dumping trace to {}'.format(trace_filename))
+        util.log_fn('Dumping trace to {}'.format(trace_filename), 4)
         # trace = timeline.Timeline(step_stats=run_metadata.step_stats)
         # chrome_trace = trace.generate_chrome_trace_format(show_dataflow=True, show_memory=True)
         # with open(trace_filename, 'w') as trace_file:

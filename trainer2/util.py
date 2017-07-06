@@ -195,6 +195,7 @@ def load_env_flags():
     os.environ['TF_SYNC_ON_FINISH'] = str(int(FLAGS.sync_on_finish))
 
 
-def log_fn(string):
-    tf.logging.info(string)
+def log_fn(string, debug_level=2):
+    if FLAGS.debug_level >= debug_level:
+        tf.logging.info(string)
     # print(string)

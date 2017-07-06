@@ -8,6 +8,10 @@ tf.flags.DEFINE_boolean(
     'run_training', True,
     'WhetherRun training or evaluation.')
 
+tf.flags.DEFINE_integer(
+    'debug_level', 1,
+    'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for max.')
+
 #############
 # BATCH     #
 #############

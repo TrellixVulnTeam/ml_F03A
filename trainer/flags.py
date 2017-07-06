@@ -185,7 +185,7 @@ tf.flags.DEFINE_boolean(
 # OUTPUT: Summary and Save & load checkpoints.
 
 tf.flags.DEFINE_integer(
-    'write_summary', 1,
+    'summary_verbosity', 1,
     'Verbosity level for summary ops. Pass 0 to disable both summaries'
     ' and checkpoints.'
 )
@@ -305,7 +305,7 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_boolean(
-    'cross_replica_sync', True,
+    'cross_replica_sync', False,
     ''
 )
 
