@@ -118,10 +118,7 @@ tf.flags.DEFINE_integer(
     'The autotune threshold for the models'
 )
 
-tf.flags.DEFINE_integer(
-    'display_every', 100,
-    'Number of local steps after which progress is printed out'
-)
+tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which progress is printed out')
 
 # tf.flags.DEFINE_integer(
 #     'num_intra_threads', 0,
@@ -141,9 +138,7 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_string(
     # 'data_dir', '../data/data/train',
-    'data_dir', None,
-    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
-)
+    'data_dir', None, 'Path to dataset in TFRecord format. If not specified, synthetic data will be used.')
 
 # tf.flags.DEFINE_string(
 #     'data_name', None,
@@ -151,10 +146,7 @@ tf.flags.DEFINE_string(
 #     ' automatically guessed based on --data_dir.'
 # )
 
-tf.flags.DEFINE_string(
-    'data_format', 'NHWC',
-    'Data layout to use: NHWC (TF native) or NCHW (cuDNN native).'
-)
+tf.flags.DEFINE_string('data_format', 'NHWC', 'Data layout to use: NHWC (TF native) or NCHW (cuDNN native).')
 
 # PREPROCESSING
 
@@ -179,7 +171,8 @@ tf.flags.DEFINE_bool(
 
 tf.flags.DEFINE_integer(
     'save_summaries_steps', 25,
-    'How often to save summaries for trained models. Pass 0 to disable summaries.')
+    'How often to save summaries for trained models. Pass 0 to disable summaries.'
+)
 
 tf.flags.DEFINE_integer('save_model_secs', 300, 'How often to save trained models. Pass 0 to disable checkpoints')
 
@@ -190,10 +183,7 @@ tf.flags.DEFINE_string('eval_dir', 'train_eval', 'Directory where to write eval 
 tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
 
 # https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
-tf.flags.DEFINE_string(
-    'trace_file', None,
-    'Enable TensorFlow tracing and write trace to this file.'
-)
+tf.flags.DEFINE_string('trace_file', None, 'Enable TensorFlow tracing and write trace to this file.')
 
 tf.flags.DEFINE_string(
     'graph_file', None,

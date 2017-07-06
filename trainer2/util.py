@@ -44,8 +44,53 @@ class Config(object):
         self.num_cpus = num_cpus
         self.num_gpus = num_gpus
 
+        self.cpu_device = '%s/cpu:0' % worker_prefix
+        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in range(num_gpus)]
+        self.global_step_device = ps_device if job_name else self.cpu_device
+        self.sync_queue_counter = 0
+
         if is_chief and task_index > 0:
             raise ValueError('Invalid master configuration.')
+
+    def create_sync_queue(self, name_prefix, enqueue_after):
+        """Adds ops to enqueue on all worker queues.
+
+        Args:
+          name_prefix: prefixed for the shared_name of ops.
+          enqueue_after: control dependency from ops.
+
+        Returns:
+          an op that should be used as control dependency before starting next step.
+        """
+        self.sync_queue_counter += 1
+        # Handle case where master is only worker
+        try:
+            num_workers = self.cluster.num_tasks('worker') + 1
+        except ValueError:
+            num_workers = 1
+
+        with tf.device(self.sync_queue_devices[self.sync_queue_counter % len(self.sync_queue_devices)]):
+            sync_queues = [
+                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
+                for i in range(num_workers)]
+            queue_ops = []
+
+            # For each other worker, add an entry in a queue, signaling that it can finish this step.
+            token = tf.constant(False)
+            with tf.control_dependencies(enqueue_after):
+                for i, q in enumerate(sync_queues):
+                    if self.job_name == 'master' and i == 0:
+                        queue_ops.append(tf.no_op())
+                    elif self.job_name == 'worker' and i == self.task_index + 1:
+                        queue_ops.append(tf.no_op())
+                    else:
+                        queue_ops.append(q.enqueue(token))
+
+            # Drain tokens off queue for this worker, one for each other worker.
+            temp_index = self.task_index if self.job_name == 'master' else self.task_index + 1
+            queue_ops.append(sync_queues[temp_index].dequeue_many(len(sync_queues) - 1))
+
+        return tf.group(*queue_ops)
 
     @classmethod
     def local_config(cls):

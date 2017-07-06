@@ -266,7 +266,7 @@ class VariableMgrIndependent(VariableMgr):
         return [grad_and_vars[device_num] for grad_and_vars in zip(*device_grads)]
 
     def get_devices(self):
-        return self.benchmark_cnn.raw_devices
+        return self.benchmark_cnn.config.raw_devices
 
 
 class VariableMgrLocalFetchFromPS(VariableMgr):
@@ -292,7 +292,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
             device_grads, use_mean=True)
 
     def get_devices(self):
-        raw_devices = self.benchmark_cnn.raw_devices
+        raw_devices = self.benchmark_cnn.config.raw_devices
         if self.benchmark_cnn.config.local_parameter_device == 'gpu':
             return [ParamServerDeviceSetter(d, raw_devices) for d in raw_devices]
         else:
@@ -465,13 +465,13 @@ class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
         # ops used for that variable on that device:
         #   staging_vars_on_devices[device_num][var_name] == (put_op, get_op)
         self.staging_vars_on_devices = [dict() for _ in
-                                        self.benchmark_cnn.raw_devices]
+                                        self.benchmark_cnn.config.raw_devices]
 
     def supports_staged_vars(self):
         return True
 
     def create_outer_variable_scope(self, device_num):
-        self._custom_getter = StagedVariableGetter(device_num, self.benchmark_cnn.raw_devices, None, self)
+        self._custom_getter = StagedVariableGetter(device_num, self.benchmark_cnn.config.raw_devices, None, self)
         return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
 
     def trainable_variables_on_device(self, device_num, writable=False):
@@ -531,7 +531,7 @@ class VariableMgrLocalReplicated(VariableMgr):
         return post_init_ops
 
     def get_devices(self):
-        return self.benchmark_cnn.raw_devices
+        return self.benchmark_cnn.config.raw_devices
 
 
 class VariableMgrDistributedFetchFromPS(VariableMgr):
@@ -547,10 +547,10 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def create_outer_variable_scope(self, device_num):
         if self.benchmark_cnn.config.local_parameter_device == 'gpu':
-            caching_devices = self.benchmark_cnn.raw_devices
+            caching_devices = self.benchmark_cnn.config.raw_devices
         else:
-            caching_devices = [self.benchmark_cnn.cpu_device]
-        custom_getter = OverrideCachingDevice(caching_devices, self.benchmark_cnn.cpu_device, 1024 * 64)
+            caching_devices = [self.benchmark_cnn.config.cpu_device]
+        custom_getter = OverrideCachingDevice(caching_devices, self.benchmark_cnn.config.cpu_device, 1024 * 64)
         return tf.variable_scope('v', reuse=bool(device_num), custom_getter=custom_getter)
 
     def preprocess_device_grads(self, device_grads):
@@ -565,7 +565,7 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
             len(self.benchmark_cnn.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
         return [tf.train.replica_device_setter(worker_device=d, cluster=self.benchmark_cnn.config.cluster,
-                ps_strategy=ps_strategy) for d in self.benchmark_cnn.raw_devices]
+                ps_strategy=ps_strategy) for d in self.benchmark_cnn.config.raw_devices]
 
 
 class VariableMgrDistributedFetchFromStagedPS(VariableMgrDistributedFetchFromPS):
@@ -574,12 +574,12 @@ class VariableMgrDistributedFetchFromStagedPS(VariableMgrDistributedFetchFromPS)
     def __init__(self, benchmark_cnn):
         super(VariableMgrDistributedFetchFromStagedPS, self).__init__(benchmark_cnn)
         self.staging_vars_on_devices = [dict() for _ in
-                                        self.benchmark_cnn.raw_devices]
+                                        self.benchmark_cnn.config.raw_devices]
         self.staged_vars_on_cpu = {}
 
     def create_outer_variable_scope(self, device_num):
         self._custom_getter = StagedVariableGetter(
-            device_num, self.benchmark_cnn.raw_devices, self.benchmark_cnn.cpu_device, self)
+            device_num, self.benchmark_cnn.config.raw_devices, self.benchmark_cnn.config.cpu_device, self)
         return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
 
     def supports_staged_vars(self):
@@ -616,7 +616,8 @@ class VariableMgrDistributedReplicated(VariableMgr):
         # Make shadow variable for each original trainable variable.
         for i, (g, v) in enumerate(avg_grads):
             my_name = PS_SHADOW_VAR_PREFIX + '/' + v.name
-            if my_name.endswith(':0'): my_name = my_name[:-2]
+            if my_name.endswith(':0'):
+                my_name = my_name[:-2]
             new_v = tf.get_variable(my_name, dtype=v.dtype.base_dtype,
                                     initializer=v.initial_value,
                                     trainable=True)
@@ -635,7 +636,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
             barrier = self.benchmark_cnn.add_sync_queues_and_barrier(
                 'replicate_variable_%s' % i, [apply_gradient_op])
             with tf.control_dependencies([barrier]):
-                with tf.device(self.benchmark_cnn.cpu_device):
+                with tf.device(self.benchmark_cnn.config.cpu_device):
                     updated_value = v.read_value()
                     for my_d in range(len(self.benchmark_cnn.devices)):
                         training_ops.append(
@@ -664,7 +665,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
         return post_init_ops
 
     def get_devices(self):
-        return self.benchmark_cnn.raw_devices
+        return self.benchmark_cnn.config.raw_devices
 
 
 def sum_grad_and_var_all_reduce(grad_and_vars, devices):
@@ -702,7 +703,7 @@ def aggregate_gradients_using_copy_with_device_selection(benchmark_cnn, tower_gr
        across all towers.
     """
     if benchmark_cnn.config.local_parameter_device == 'gpu':
-        avail_devices = benchmark_cnn.raw_devices
+        avail_devices = benchmark_cnn.config.raw_devices
     else:
         avail_devices = [benchmark_cnn.config.ps_device]
     agg_grads = []

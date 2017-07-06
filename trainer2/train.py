@@ -32,6 +32,8 @@ class Trainer(object):
         self.config = config
         self.supervisor = None
         self.model = Model.trial()
+        self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
+
         self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
@@ -40,28 +42,11 @@ class Trainer(object):
         min_autotune_warmup = 5 * autotune_threshold * autotune_threshold
         self.num_warmup_batches = FLAGS.num_warmup_batches if FLAGS.num_warmup_batches else max(10, min_autotune_warmup)
 
-        self.sync_queue_counter = 0
         self.batch_size = self.model.batch_size * self.config.num_gpus
-
-        self.cpu_device = '%s/cpu:0' % self.config.worker_prefix
-        self.raw_devices = ['%s/%s:%i' % (self.config.worker_prefix, FLAGS.device, i)
-                            for i in range(self.config.num_gpus)]
-
         self.manager = manager.manager_factory(self)
-        self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
-
         self.devices = self.manager.get_devices()
-        if self.config.job_name:
-            self.global_step_device = self.config.ps_device
-        else:
-            self.global_step_device = self.cpu_device
 
     def run(self):
-
-        if self.config.job_name in ['ps']:
-            ValueError('PS SHOULD NOT BE HERE')
-            return
-
         """Run trainer."""
         if self.config.job_name in ['master', 'worker', '']:
             with tf.Graph().as_default():
@@ -71,20 +56,24 @@ class Trainer(object):
 
         (enqueue_ops, fetches) = self.build_graph()
         main_fetch_group = tf.group(*fetches)
-
-        execution_barrier = None
-        if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
-            execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
+        #
+        # execution_barrier = None
+        # if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
+        #     execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
 
         global_step = tf.contrib.framework.get_global_step()
-        with tf.device(self.global_step_device):
+        with tf.device(self.config.global_step_device):
             with tf.control_dependencies([main_fetch_group]):
                 inc_global_step = global_step.assign_add(1)
                 fetches.append(inc_global_step)
 
-        if self.config.job_name in WORKER_ARRAY and FLAGS.cross_replica_sync:
-            # Block all replicas until all replicas are ready for next step.
-            fetches.append(self.add_sync_queues_and_barrier('sync_queues_step_end_', [main_fetch_group]))
+        execution_barrier = None
+        if self.config.job_name in WORKER_ARRAY:
+            if FLAGS.cross_replica_sync:
+                # Block all replicas until all replicas are ready for next step.
+                fetches.append(self.config.create_sync_queue('sync_queues_step_end_', [main_fetch_group]))
+            else:
+                execution_barrier = self.config.create_sync_queue('execution_barrier_', [])
 
         variable_mgr_post_init_ops = self.manager.get_post_init_ops()
         if variable_mgr_post_init_ops:
@@ -109,8 +98,7 @@ class Trainer(object):
             init_global_step = 0
 
             global_step_watcher = GlobalStepWatcher(
-                sess=sess,
-                global_step_op=global_step,
+                sess=sess, global_step_op=global_step,
                 start_at_global_step=len(self.config.worker_tasks) * self.num_warmup_batches + init_global_step,
                 end_at_global_step=len(self.config.worker_tasks) * (self.num_warmup_batches + self.num_batches) - 1)
             global_step_watcher.start()
@@ -121,15 +109,11 @@ class Trainer(object):
             local_step = -1 * self.num_warmup_batches
 
             def should_stop():
-
                 if FLAGS.cross_replica_sync and self.config.job_name in WORKER_ARRAY:
-                    # In cross-replica sync mode, all workers must run the same number of
-                    # local steps, or else the workers running the extra step will block.
-                    _should_stop = local_step == self.num_batches
+                    # In cross-replica sync mode, all workers must run the same number of local steps
+                    return local_step == self.num_batches
                 else:
-                    _should_stop = global_step_watcher.done()
-
-                return _should_stop
+                    return global_step_watcher.done()
 
             while not should_stop():
 
@@ -152,9 +136,6 @@ class Trainer(object):
                 summary_str = train_step(sess, fetches, local_step, self.batch_size, step_train_times,
                                          self.trace_filename, fetch_summary)
 
-                if self.supervisor.should_stop():
-                    log_fn('{}-{} should QUIT - SV'.format(self.config.job_name, self.config.task_index))
-
                 if summary_str is not None and self.config.is_chief:
                     self.supervisor.summary_computed(sess, summary_str)
                 local_step += 1
@@ -170,18 +151,10 @@ class Trainer(object):
             log_fn('total images/sec: %.2f' % images_per_sec)
             log_fn('-' * 64)
 
-            # Save the model checkpoint.
-            # if FLAGS.train_dir is not None and self.config.is_chief:
-            #     checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-            #     if not gfile.Exists(FLAGS.train_dir):
-            #         gfile.MakeDirs(FLAGS.train_dir)
-            #     self.supervisor.saver.save(sess, checkpoint_path, global_step)
             self.supervisor.save_model(sess, global_step)
 
             if execution_barrier:
-                # Wait for other workers to reach the end, so this worker
-                #  doesn't go away underneath them.
-                log_fn('{}-{} reached exec_barrier: '.format(self.config.job_name, self.config.task_index))
+                # Wait for other workers to reach the end, so this worker doesn't go away underneath them.
                 sess.run([execution_barrier])
         self.supervisor.stop()
 
@@ -207,10 +180,10 @@ class Trainer(object):
         gpu_compute_stage_ops = []
         gpu_grad_stage_ops = []
 
-        with tf.device(self.global_step_device):
+        with tf.device(self.config.global_step_device):
             global_step = tf.contrib.framework.get_or_create_global_step()
 
-        with tf.device(self.cpu_device):
+        with tf.device(self.config.cpu_device):
             nclass, images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(self.devices))
 
         update_ops = None
@@ -300,7 +273,7 @@ class Trainer(object):
                 self.manager.append_apply_gradients_ops(gradient_state, opt, clipped_grads, training_ops)
         train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
 
-        with tf.device(self.cpu_device):
+        with tf.device(self.config.cpu_device):
             if self.config.task_index == 0 and FLAGS.write_summary > 0:
                 tf.summary.scalar('learning_rate', learning_rate)
                 tf.summary.scalar('total_loss', total_loss)
@@ -318,7 +291,7 @@ class Trainer(object):
             gpu_copy_stage_ops, gpu_compute_stage_ops, gpu_grad_stage_ops):
         """Add ops for forward-pass and gradient computations."""
         if not use_synthetic_gpu_images:
-            with tf.device(self.cpu_device):
+            with tf.device(self.config.cpu_device):
                 images_shape = host_images.get_shape()
                 labels_shape = host_labels.get_shape()
                 gpu_copy_stage = data_flow_ops.StagingArea([tf.float32, tf.int32], shapes=[images_shape, labels_shape])
@@ -326,7 +299,7 @@ class Trainer(object):
                 gpu_copy_stage_ops.append(gpu_copy_stage_op)
                 host_images, host_labels = gpu_copy_stage.get()
 
-        with tf.device(self.raw_devices[device_num]):
+        with tf.device(self.config.raw_devices[device_num]):
             if not use_synthetic_gpu_images:
                 gpu_compute_stage = data_flow_ops.StagingArea(
                     [tf.float32, tf.int32],
@@ -391,55 +364,12 @@ class Trainer(object):
             gradvars = list(zip(grads, param_refs))
             return loss, gradvars
 
-    def add_sync_queues_and_barrier(self, name_prefix, enqueue_after_list):
-        """Adds ops to enqueue on all worker queues.
-
-        Args:
-          name_prefix: prefixed for the shared_name of ops.
-          enqueue_after_list: control dependency from ops.
-
-        Returns:
-          an op that should be used as control dependency before starting next step.
-        """
-        self.sync_queue_counter += 1
-
-        # Handle case where master is only worker
-        try:
-            num_workers = self.config.cluster.num_tasks('worker') + 1
-        except ValueError:
-            num_workers = 1
-
-        # log_fn('SYNC QUEUE: {}'.format(self.config.sync_queue_devices))
-        with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
-            sync_queues = [
-                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
-                for i in range(num_workers)]
-            queue_ops = []
-
-            # For each other worker, add an entry in a queue, signaling that it can finish this step.
-            token = tf.constant(False)
-            with tf.control_dependencies(enqueue_after_list):
-                for i, q in enumerate(sync_queues):
-                    # log_fn('i: {}, q: {}'.format(i, q))
-                    if self.config.job_name == 'master' and i == 0:
-                        queue_ops.append(tf.no_op())
-                    elif self.config.job_name == 'worker' and i == self.config.task_index + 1:
-                        queue_ops.append(tf.no_op())
-                    else:
-                        queue_ops.append(q.enqueue(token))
-
-            # Drain tokens off queue for this worker, one for each other worker.
-            temp_index = self.config.task_index if self.config.job_name == 'master' else self.config.task_index + 1
-            queue_ops.append(sync_queues[temp_index].dequeue_many(len(sync_queues) - 1))
-
-        return tf.group(*queue_ops)
-
     def print_info(self):
         """Print basic information."""
         log_fn('Task:       %s' % self.config.job_name)
         log_fn('Batch size:  %s global' % self.batch_size)
         log_fn('             %s per device' % (self.batch_size / len(self.devices)))
-        log_fn('Devices:     %s' % self.raw_devices)
+        log_fn('Devices:     %s' % self.config.raw_devices)
         log_fn('Data format: %s' % self.data_format)
         log_fn('Optimizer:   %s' % FLAGS.optimizer)
         log_fn('Variables:   %s' % FLAGS.variable_update)

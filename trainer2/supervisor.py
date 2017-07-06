@@ -22,6 +22,7 @@ class Supervisor(tf.train.Supervisor):
         self.train_dir = train_dir
         self.save_steps = save_steps
         self.graph_file = FLAGS.graph_file
+        self.sync_queue_counter = 0
 
     def run_session(self, server):
         """
