@@ -10,7 +10,7 @@ tf.flags.DEFINE_boolean(
 
 tf.flags.DEFINE_integer(
     'debug_level', 1,
-    'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for max.')
+    'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
 
 #############
 # BATCH     #

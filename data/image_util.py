@@ -11,15 +11,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from datetime import datetime
 import os
-import random
 import sys
 import threading
+from datetime import datetime
 
 import numpy as np
 import tensorflow as tf
-from data.image_coder import ImageCoder
+
+try:
+    from data.image_coder import ImageCoder
+except ImportError:
+    # from image_coder import ImageCoder
+    from image_coder import ImageCoder as ImageCoder
 
 
 def _build_synset_lookup(imagenet_metadata_file, u_labels):

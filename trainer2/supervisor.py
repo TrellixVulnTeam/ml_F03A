@@ -8,7 +8,7 @@ import tensorflow as tf
 from tensorflow.python.platform import gfile
 
 from trainer2 import flags
-from trainer2.util import create_config_proto
+from trainer2.config import create_config_proto
 FLAGS = flags.get_flags()
 
 
@@ -22,7 +22,6 @@ class Supervisor(tf.train.Supervisor):
         self.train_dir = train_dir
         self.save_steps = save_steps
         self.graph_file = FLAGS.graph_file
-        self.sync_queue_counter = 0
 
     def run_session(self, server):
         """

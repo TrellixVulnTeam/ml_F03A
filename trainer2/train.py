@@ -5,13 +5,23 @@ import time
 import numpy as np
 import tensorflow as tf
 
-from trainer2 import datasets
-from trainer2 import flags
-from trainer2 import manager
-from trainer2 import util
-from trainer2.global_step import GlobalStepWatcher
-from trainer2.model import Model
-from trainer2.supervisor import Supervisor
+try:
+    from trainer2 import datasets
+    from trainer2 import flags
+    from trainer2 import manager
+    from trainer2 import util
+    from trainer2.global_step import GlobalStepWatcher
+    from trainer2.model import Model
+    from trainer2.supervisor import Supervisor
+except ImportError:
+    import datasets
+    import flags
+    import manager
+    import util
+    from global_step import GlobalStepWatcher
+    from model import Model
+    from supervisor import Supervisor
+
 
 FLAGS = flags.get_flags()
 WORKER_ARRAY = ['worker', 'master']
@@ -174,7 +184,16 @@ class Trainer(object):
 
 
 def train_step(sess, fetches, step, batch_size, step_train_times, trace_filename, summary_op=None):
-    """Train one step"""
+    """Method for training/(advancing) one step
+    :param sess: Session object for the training
+    :param fetches: Fetches operations
+    :param int step: Current local step
+    :param batch_size: Training batch size
+    :param step_train_times: Historic step train times
+    :param trace_filename: Filename for output profiling-file
+    :param summary_op: Summary operation to use in step
+    :return: Summary string from training step
+    """
     if trace_filename is not None and step == -1:
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
         run_metadata = tf.RunMetadata()

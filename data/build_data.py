@@ -16,16 +16,20 @@ import tarfile
 import shutil
 import sys
 
+import numpy as np
+import tensorflow as tf
+
 if sys.version_info >= (3,):
     from urllib import request as urllib2
 else:
     import urllib2
 
-import numpy as np
-import tensorflow as tf
-
-from data import image_util
-from data import process_bounding_boxes
+try:
+    from data import image_util
+    from data import process_bounding_boxes
+except ImportError:
+    import image_util
+    import process_bounding_boxes
 
 tf.app.flags.DEFINE_string('data_dir', 'raw_data', 'Raw data directory')
 tf.app.flags.DEFINE_string('output_dir', 'data', 'Output data directory')

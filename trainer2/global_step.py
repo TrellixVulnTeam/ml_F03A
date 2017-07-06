@@ -2,7 +2,10 @@
 import threading
 import time
 
-from trainer2.util import log_fn
+try:
+    from trainer2.util import log_fn
+except ImportError:
+    from util import log_fn
 
 
 class GlobalStepWatcher(threading.Thread):
@@ -46,9 +49,6 @@ class GlobalStepWatcher(threading.Thread):
 
     def done(self):
         return self.finish_time > 0
-
-    def value(self):
-        return self._value
 
     def steps_per_second(self):
         return ((self.finish_step - self.start_step) /
