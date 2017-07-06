@@ -32,7 +32,11 @@ class Supervisor(tf.train.Supervisor):
         :return: A context manager that yields a `Session` restored from the latest checkpoint or initialized from
             scratch if not checkpoint exists.
         """
-        target = server.target or ''
+        try:
+            target = server.target
+        except AttributeError:
+            target = ''
+
         return self.managed_session(
             master=target,
             start_standard_services=self.write_summary,

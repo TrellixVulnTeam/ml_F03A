@@ -155,6 +155,7 @@ class VariableMgr(object):
     def __init__(self, benchmark_cnn):
         self.benchmark_cnn = benchmark_cnn
         self.staging_delta_ops = []
+        self.devices = self.get_devices()
 
     def each_tower_has_variables(self):
         """Returns True if each GPU tower of the model has separate variables."""

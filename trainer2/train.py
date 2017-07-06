@@ -54,12 +54,12 @@ class Trainer(object):
 
     def train(self):
 
-        (enqueue_ops, fetches) = self.build_graph()
+        enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
         main_fetch_group = tf.group(*fetches)
-        #
-        # execution_barrier = None
-        # if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
-        #     execution_barrier = self.add_sync_queues_and_barrier('execution_barrier_', [])
+
+        execution_barrier = None
+        if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
+            execution_barrier = self.config.create_sync_queue('execution_barrier_', [])
 
         global_step = tf.contrib.framework.get_global_step()
         with tf.device(self.config.global_step_device):
@@ -67,13 +67,9 @@ class Trainer(object):
                 inc_global_step = global_step.assign_add(1)
                 fetches.append(inc_global_step)
 
-        execution_barrier = None
-        if self.config.job_name in WORKER_ARRAY:
-            if FLAGS.cross_replica_sync:
-                # Block all replicas until all replicas are ready for next step.
-                fetches.append(self.config.create_sync_queue('sync_queues_step_end_', [main_fetch_group]))
-            else:
-                execution_barrier = self.config.create_sync_queue('execution_barrier_', [])
+        if self.config.job_name in WORKER_ARRAY and FLAGS.cross_replica_sync:
+            # Block all replicas until all replicas are ready for next step.
+            fetches.append(self.config.create_sync_queue('sync_queues_step_end_', [main_fetch_group]))
 
         variable_mgr_post_init_ops = self.manager.get_post_init_ops()
         if variable_mgr_post_init_ops:
@@ -158,212 +154,6 @@ class Trainer(object):
                 sess.run([execution_barrier])
         self.supervisor.stop()
 
-    def build_graph(self):
-
-        phase_train = not (FLAGS.eval or FLAGS.forward_only)
-        use_synthetic_gpu_images = (self.dataset is None)
-
-        data_type = tf.float32
-        input_data_type = tf.float32
-        input_nchan = 3
-        tf.set_random_seed(1234)
-        np.random.seed(4321)
-
-        enqueue_ops = []
-        losses = []
-        device_grads = []
-        all_logits = []
-        all_top_1_ops = []
-        all_top_5_ops = []
-
-        gpu_copy_stage_ops = []
-        gpu_compute_stage_ops = []
-        gpu_grad_stage_ops = []
-
-        with tf.device(self.config.global_step_device):
-            global_step = tf.contrib.framework.get_or_create_global_step()
-
-        with tf.device(self.config.cpu_device):
-            nclass, images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(self.devices))
-
-        update_ops = None
-        staging_delta_ops = []
-
-        for dev in range(len(self.devices)):
-
-            with self.manager.create_outer_variable_scope(dev), tf.name_scope('tower_%i' % dev) as name_scope:
-                results = self.add_forward_pass_and_gradients(
-                    images_splits[dev], labels_splits[dev], nclass,
-                    phase_train, dev, input_data_type, data_type, input_nchan,
-                    use_synthetic_gpu_images, gpu_copy_stage_ops, gpu_compute_stage_ops,
-                    gpu_grad_stage_ops)
-                if phase_train:
-                    losses.append(results[0])
-                    device_grads.append(results[1])
-                else:
-                    all_logits.append(results[0])
-                    all_top_1_ops.append(results[1])
-                    all_top_5_ops.append(results[2])
-
-                if self.manager.retain_tower_updates(dev):
-                    # Retain the Batch Normalization updates operations only from the
-                    # first tower. Ideally, we should grab the updates from all towers but
-                    # these stats accumulate extremely fast so we can ignore the other
-                    # stats from the other towers without significant detriment.
-                    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
-                    staging_delta_ops = list(self.manager.staging_delta_ops)
-
-        if not update_ops:
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
-
-        enqueue_ops.append(tf.group(*gpu_copy_stage_ops))
-
-        if self.manager.supports_staged_vars():
-            for staging_ops in self.manager.staging_vars_on_devices:
-                gpu_compute_stage_ops.extend(
-                    [put_op for _, (put_op, _) in six.iteritems(staging_ops)])
-
-        enqueue_ops.append(tf.group(*gpu_compute_stage_ops))
-
-        if gpu_grad_stage_ops:
-            staging_delta_ops += gpu_grad_stage_ops
-        if staging_delta_ops:
-            enqueue_ops.append(tf.group(*staging_delta_ops))
-
-        if not phase_train:
-            if FLAGS.forward_only:
-                all_logits = tf.concat(all_logits, 0)
-                fetches = [all_logits] + enqueue_ops
-            else:
-                all_top_1_ops = tf.reduce_sum(all_top_1_ops)
-                all_top_5_ops = tf.reduce_sum(all_top_5_ops)
-                fetches = [all_top_1_ops, all_top_5_ops] + enqueue_ops
-            return enqueue_ops, fetches
-
-        extra_nccl_ops = []
-        apply_gradient_devices, gradient_state = (
-            self.manager.preprocess_device_grads(device_grads))
-
-        training_ops = []
-        for d, device in enumerate(apply_gradient_devices):
-            with tf.device(device):
-                total_loss = tf.reduce_mean(losses)
-                avg_grads = self.manager.get_gradients_to_apply(d, gradient_state)
-
-                gradient_clip = FLAGS.gradient_clip
-                learning_rate = self.model.learning_rate
-
-                if (not self.dataset.synthetic) and FLAGS.num_epochs_per_decay > 0:
-                    num_batches_per_epoch = (self.dataset.num_examples_per_epoch() / self.batch_size)
-                    decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
-
-                    # Decay the learning rate exponentially based on the number of steps.
-                    learning_rate = tf.train.exponential_decay(
-                        FLAGS.learning_rate, global_step,
-                        decay_steps, FLAGS.learning_rate_decay_factor, staircase=True)
-
-                if gradient_clip is not None:
-                    clipped_grads = [
-                        (tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
-                        for grad, var in avg_grads]
-                else:
-                    clipped_grads = avg_grads
-                # Set optimizer for training
-                opt = tf.train.GradientDescentOptimizer(learning_rate)
-                self.manager.append_apply_gradients_ops(gradient_state, opt, clipped_grads, training_ops)
-        train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
-
-        with tf.device(self.config.cpu_device):
-            if self.config.task_index == 0 and FLAGS.write_summary > 0:
-                tf.summary.scalar('learning_rate', learning_rate)
-                tf.summary.scalar('total_loss', total_loss)
-                for grad, var in avg_grads:
-                    if grad is not None:
-                        tf.summary.histogram(var.op.name + '/gradients', grad)
-                for var in tf.trainable_variables():
-                    tf.summary.histogram(var.op.name, var)
-        fetches = [train_op, total_loss] + enqueue_ops
-        return enqueue_ops, fetches
-
-    def add_forward_pass_and_gradients(
-            self, host_images, host_labels, nclass, phase_train, device_num,
-            input_data_type, data_type, input_nchan, use_synthetic_gpu_images,
-            gpu_copy_stage_ops, gpu_compute_stage_ops, gpu_grad_stage_ops):
-        """Add ops for forward-pass and gradient computations."""
-        if not use_synthetic_gpu_images:
-            with tf.device(self.config.cpu_device):
-                images_shape = host_images.get_shape()
-                labels_shape = host_labels.get_shape()
-                gpu_copy_stage = data_flow_ops.StagingArea([tf.float32, tf.int32], shapes=[images_shape, labels_shape])
-                gpu_copy_stage_op = gpu_copy_stage.put([host_images, host_labels])
-                gpu_copy_stage_ops.append(gpu_copy_stage_op)
-                host_images, host_labels = gpu_copy_stage.get()
-
-        with tf.device(self.config.raw_devices[device_num]):
-            if not use_synthetic_gpu_images:
-                gpu_compute_stage = data_flow_ops.StagingArea(
-                    [tf.float32, tf.int32],
-                    shapes=[images_shape, labels_shape]
-                )
-                # The CPU-to-GPU copy is triggered here.
-                gpu_compute_stage_op = gpu_compute_stage.put([host_images, host_labels])
-                images, labels = gpu_compute_stage.get()
-                images = tf.reshape(images, shape=images_shape)
-                gpu_compute_stage_ops.append(gpu_compute_stage_op)
-            else:
-                # Minor hack to avoid H2D copy when using synthetic data
-                images = tf.truncated_normal(host_images.get_shape(), dtype=input_data_type, stddev=1e-1,
-                                             name='synthetic_images')
-                images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
-                labels = host_labels
-
-        with tf.device(self.devices[device_num]):
-            # Rescale to [0, 1)
-            images *= 1. / 256
-            # Rescale to [-1,1] instead of [0, 1)
-            images = tf.subtract(images, 0.5)
-            images = tf.multiply(images, 2.0)
-
-            if self.data_format == 'NCHW':
-                images = tf.transpose(images, [0, 3, 1, 2])
-
-            if input_data_type != data_type:
-                images = tf.cast(images, data_type)
-
-            logits = self.model.get_layers(images)
-
-            if not phase_train:
-                top_1_op = tf.reduce_sum(
-                    tf.cast(tf.nn.in_top_k(logits, labels, 1), data_type))
-                top_5_op = tf.reduce_sum(
-                    tf.cast(tf.nn.in_top_k(logits, labels, 5), data_type))
-                return logits, top_1_op, top_5_op
-            loss = loss_function(logits, labels)
-            params = self.manager.trainable_variables_on_device(device_num)
-            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in params])
-            weight_decay = FLAGS.weight_decay
-            if weight_decay is not None and weight_decay != 0.:
-                loss += weight_decay * l2_loss
-
-            aggmeth = tf.AggregationMethod.DEFAULT
-            grads = tf.gradients(loss, params, aggregation_method=aggmeth)
-
-            if FLAGS.staged_vars:
-                grad_dtypes = [grad.dtype for grad in grads]
-                grad_shapes = [grad.shape for grad in grads]
-                grad_stage = data_flow_ops.StagingArea(grad_dtypes, grad_shapes)
-                grad_stage_op = grad_stage.put(grads)
-                # In general, this decouples the computation of the gradients and
-                # the updates of the weights.
-                # During the pipeline warm up, this runs enough training to produce
-                # the first set of gradients.
-                gpu_grad_stage_ops.append(grad_stage_op)
-                grads = grad_stage.get()
-
-            param_refs = self.manager.trainable_variables_on_device(device_num, writable=True)
-            gradvars = list(zip(grads, param_refs))
-            return loss, gradvars
-
     def print_info(self):
         """Print basic information."""
         log_fn('Task:       %s' % self.config.job_name)
@@ -384,17 +174,8 @@ class Trainer(object):
         log_fn('==========')
 
 
-def loss_function(logits, labels):
-    # global cross_entropy # HACK TESTING
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='xentropy')
-    loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
-    return loss
-
-
-def train_step(sess, fetches, step, batch_size, step_train_times,
-               trace_filename, summary_op=None):
-    """Advance one step of benchmarking."""
-
+def train_step(sess, fetches, step, batch_size, step_train_times, trace_filename, summary_op=None):
+    """Train one step"""
     if trace_filename is not None and step == -1:
         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
         run_metadata = tf.RunMetadata()
@@ -409,10 +190,7 @@ def train_step(sess, fetches, step, batch_size, step_train_times,
         results = sess.run(fetches, options=run_options, run_metadata=run_metadata)
     else:
         results, summary_str = sess.run([fetches, summary_op], options=run_options, run_metadata=run_metadata)
-    if not FLAGS.forward_only:
-        lossval = results[1]
-    else:
-        lossval = 0.
+    lossval = results[1]
 
     train_time = time.time() - start_time
     step_train_times.append(train_time)

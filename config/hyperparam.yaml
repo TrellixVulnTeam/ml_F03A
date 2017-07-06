@@ -1,0 +1,16 @@
+trainingInput:
+  scaleTier: CUSTOM
+  masterType: standard_gpu
+  workerType: standard_gpu
+  parameterServerType: standard
+  workerCount: 1
+  parameterServerCount: 1
+  region: us-east1
+    hyperparameters:
+    goal: MINIMIZE
+    hyperparameterMetricTag: accuracy
+    maxTrials: 4
+    params:
+      - parameterName: optimizer
+        type: CATEGORICAL
+        categoricalValues: ['sgd', 'momentum', 'rmsprop']

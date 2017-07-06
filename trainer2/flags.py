@@ -1,29 +1,12 @@
 import tensorflow as tf
 
-# The code will first check if it's running under benchmarking mode
-# or evaluation mode, depending on FLAGS.eval:
-# Under the evaluation mode, this script will read a saved model,
-#   and compute the accuracy of the model against a validation dataset.
-#   Additional ops for accuracy and top_k predictors are only used under this
-#   mode.
-# Under the benchmarking mode, user can specify whether nor not to use
-#   the forward-only option, which will only compute the loss function.
-#   forward-only cannot be enabled with eval at the same time.
-
-
 #############
 # EXEC MODE #
 #############
 
 tf.flags.DEFINE_boolean(
-    'eval', False,
-    'whether use eval or benchmarking'
-)
-
-tf.flags.DEFINE_boolean(
-    'forward_only', False,
-    'whether use forward-only or training for benchmarking'
-)
+    'run_training', True,
+    'WhetherRun training or evaluation.')
 
 #############
 # BATCH     #
@@ -36,7 +19,7 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_integer(
     'num_batches', 500,
-    'number of batches to run, excluding warmup'
+    'Number of batches (per worker) to run.'
 )
 
 tf.flags.DEFINE_integer(
@@ -50,8 +33,7 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_string(
     'local_parameter_device', 'cpu',
-    'Device to use as parameter server: cpu or gpu. For distributed training,'
-    ' it can affect where caching of variables happens.'
+    'Device to use as local parameter server: cpu or gpu.'
 )
 
 tf.flags.DEFINE_string(
@@ -140,12 +122,6 @@ tf.flags.DEFINE_string(
     # 'data_dir', '../data/data/train',
     'data_dir', None, 'Path to dataset in TFRecord format. If not specified, synthetic data will be used.')
 
-# tf.flags.DEFINE_string(
-#     'data_name', None,
-#     'Name of dataset: imagenet or flowers. If not specified, it is'
-#     ' automatically guessed based on --data_dir.'
-# )
-
 tf.flags.DEFINE_string('data_format', 'NHWC', 'Data layout to use: NHWC (TF native) or NCHW (cuDNN native).')
 
 # PREPROCESSING
@@ -182,7 +158,7 @@ tf.flags.DEFINE_string('eval_dir', 'train_eval', 'Directory where to write eval 
 
 tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
 
-# https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
+# TUTORIAL: https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
 tf.flags.DEFINE_string('trace_file', None, 'Enable TensorFlow tracing and write trace to this file.')
 
 tf.flags.DEFINE_string(
@@ -196,11 +172,6 @@ tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Win
 tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
 
 tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged from the main computation.')
-
-# tf.flags.DEFINE_boolean(
-#     'force_gpu_compatible', True,
-#     'whether to enable force_gpu_compatible in GPU_Options.'
-# )
 
 # The method for managing variables:
 #   parameter_server: variables are stored on a parameter server that holds
@@ -228,30 +199,9 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primitives where possible')
 
-# Distributed training flags.
-# tf.flags.DEFINE_string(
-#     'job_name', '',
-#     'One of "ps", "worker", "".  Empty for local training'
-# )
-#
-# tf.flags.DEFINE_string(
-#     'ps_hosts', '',
-#     'Comma-separated list of target hosts'
-# )
-#
-# tf.flags.DEFINE_string(
-#     'worker_hosts', '',
-#     'Comma-separated list of target hosts'
-# )
-#
-# tf.flags.DEFINE_integer(
-#     'task_index', 0,
-#     'Index of task within the job'
-# )
-
 tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
 
-tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
+tf.flags.DEFINE_boolean('cross_replica_sync', False, '')
 
 
 def get_flags():

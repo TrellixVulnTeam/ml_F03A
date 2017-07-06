@@ -44,6 +44,7 @@ class Dataset(object):
             raise ValueError('Data directory not specified')
         self.data_dir = data_dir
         self.image_size = image_size
+        self.input_channels = 3
         self.input_data_type = tf.float32
         self.resize_method = FLAGS.resize_method
         self.synthetic = False
@@ -98,13 +99,12 @@ class ImgData(Dataset):
         subset = 'train' if train else 'validation'
         images, labels = pre_proc_result.minibatch(self, subset=subset)
 
-        return self.num_classes, images, labels
+        return images, labels
 
 
 class SyntheticData(Dataset):
     def __init__(self, data_dir=None):
         super(SyntheticData, self).__init__('synthetic-data', data_dir)
-        self.input_channels = 3
         self.synthetic = True
 
     def num_classes(self):
@@ -117,17 +117,8 @@ class SyntheticData(Dataset):
         """Add image Preprocessing ops to tf graph."""
         nclass = 1001
         input_shape = [batch_size, self.image_size, self.image_size, self.input_channels]
-        images = tf.truncated_normal(
-            input_shape,
-            dtype=self.input_data_type,
-            stddev=1e-1,
-            name='synthetic_images')
-        labels = tf.random_uniform(
-            [batch_size],
-            minval=1,
-            maxval=nclass,
-            dtype=tf.int32,
-            name='synthetic_labels')
+        images = tf.truncated_normal(input_shape, dtype=self.input_data_type, stddev=1e-1, name='synthetic_images')
+        labels = tf.random_uniform([batch_size], minval=1, maxval=nclass, dtype=tf.int32, name='synthetic_labels')
 
         images = tf.contrib.framework.local_variable(images, name='images')
         labels = tf.contrib.framework.local_variable(labels, name='labels')
@@ -140,7 +131,7 @@ class SyntheticData(Dataset):
             images_splits = tf.split(images, num_comp_devices, 0)
             labels_splits = tf.split(labels, num_comp_devices, 0)
 
-        return nclass, images_splits, labels_splits
+        return images_splits, labels_splits
 
 
 class ImagenetData(Dataset):
