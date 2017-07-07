@@ -3,14 +3,19 @@ trainingInput:
   masterType: standard_gpu
   workerType: standard_gpu
   parameterServerType: standard
-  workerCount: 1
-  parameterServerCount: 1
+  workerCount: 0
+  parameterServerCount: 0
   region: us-east1
   hyperparameters:
     goal: MINIMIZE
     hyperparameterMetricTag: total_loss
-    maxTrials: 3
+    maxTrials: 9
     params:
     - parameterName: optimizer
       type: CATEGORICAL
       categoricalValues: ['sgd', 'momentum', 'rmsprop']
+    - parameterName: learning_rate
+      type: DOUBLE
+      minValue: 0.0001
+      maxValue: 0.007
+      scaleType: UNIT_REVERSE_LOG_SCALE
