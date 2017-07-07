@@ -97,9 +97,9 @@ ENV/
 
 /.idea/
 /.editorconfig
-/trainer/train_data/
 /trainer2/train_data/
 /data/img_data/
 /data/raw_data/
 /data/Annotation/
 /data/data/
+/trainer/
