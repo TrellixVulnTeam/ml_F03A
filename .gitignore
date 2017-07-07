@@ -95,6 +95,9 @@ ENV/
 # Rope project settings
 .ropeproject
 
+# Ignore TF record Files
+*.tfrecord
+
 /.idea/
 /.editorconfig
 /trainer2/train_data/
