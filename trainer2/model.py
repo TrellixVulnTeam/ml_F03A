@@ -234,30 +234,6 @@ class Model:
 
         """Add ops for forward-pass and gradient computations."""
 
-        # if not use_synthetic_gpu_images:
-        #     with tf.device(self.config.cpu_device):
-        #         images_shape = host_images.get_shape()
-        #         labels_shape = host_labels.get_shape()
-        #         gpu_copy_stage = df_ops.StagingArea([tf.float32, tf.int32], shapes=[images_shape, labels_shape])
-        #         gpu_copy_stage_op = gpu_copy_stage.put([host_images, host_labels])
-        #         gpu_copy_stage_ops.append(gpu_copy_stage_op)
-        #         host_images, host_labels = gpu_copy_stage.get()
-        #
-        # with tf.device(self.config.raw_devices[device_num]):
-        #     if not use_synthetic_gpu_images:
-        #         gpu_compute_stage = df_ops.StagingArea([tf.float32, tf.int32], shapes=[images_shape, labels_shape])
-        #         # The CPU-to-GPU copy is triggered here.
-        #         gpu_compute_stage_op = gpu_compute_stage.put([host_images, host_labels])
-        #         images, labels = gpu_compute_stage.get()
-        #         images = tf.reshape(images, shape=images_shape)
-        #         gpu_compute_stage_ops.append(gpu_compute_stage_op)
-        #     else:
-        #         # Minor hack to avoid H2D copy when using synthetic data
-        #         images = tf.truncated_normal(host_images.get_shape(), dtype=input_data_type, stddev=1e-1,
-        #                                      name='synthetic_images')
-        #         images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
-        #         labels = host_labels
-
         with tf.device(context_device):
             images = self.reformat_images(images)
             logits = self.get_layers(images)

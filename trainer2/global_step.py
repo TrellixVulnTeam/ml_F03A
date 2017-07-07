@@ -23,8 +23,6 @@ class GlobalStepWatcher(threading.Thread):
         self.start_at_global_step = start_at_global_step
         self.end_at_global_step = end_at_global_step
 
-        # log_fn('LAST STEP: {}'.format(self.end_at_global_step))
-
         self.start_time = 0
         self.start_step = 0
         self.finish_time = 0

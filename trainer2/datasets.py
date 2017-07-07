@@ -31,6 +31,8 @@ class Dataset(object):
             assert data_dir is not None, 'Invalid data_dir type, in Dataset constructor.'
             assert os.path.isdir(data_dir)
 
+        assert image_size > 0, 'Image size must be positive.'
+
         self.data_dir = data_dir
         self.image_size = image_size
         self.input_channels = 3
@@ -74,6 +76,17 @@ class ImgData(Dataset):
             raise ValueError('Invalid data subset "%s"' % subset)
 
     def preprocess(self, batch_size, num_comp_devices, train=True):
+        """
+        Preprocess image data.
+        :param batch_size:
+        :param num_comp_devices:
+        :param train:
+        :return:
+        """
+        assert num_comp_devices > 0
+        assert batch_size > 0
+        assert isinstance(train, bool)
+
         pre_proc_result = ImProc(
             height=self.image_size,
             width=self.image_size,
@@ -102,6 +115,9 @@ class SyntheticData(Dataset):
 
     def preprocess(self, batch_size, num_comp_devices, train=True):
         """Add image Preprocessing ops to tf graph."""
+        assert num_comp_devices > 0
+        assert batch_size > 0
+        assert isinstance(train, bool)
         nclass = 1001
         input_shape = [batch_size, self.image_size, self.image_size, self.input_channels]
         images = tf.truncated_normal(input_shape, dtype=self.input_data_type, stddev=1e-1, name='synthetic_images')
