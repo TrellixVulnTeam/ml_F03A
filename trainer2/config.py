@@ -7,7 +7,10 @@ import os
 
 import tensorflow as tf
 
-from trainer2 import flags
+try:
+    from trainer2 import flags
+except ImportError:
+    import flags
 
 FLAGS = flags.get_flags()
 PS_DEVICE_STR = '/{}:0'.format(FLAGS.local_parameter_device)
@@ -18,7 +21,7 @@ OP_PARALLELISM_THREADS = 0
 
 class Config(object):
     def __init__(self, job_name, task_index, is_chief, ps_tasks=None, worker_tasks=None, cluster=None, server=None,
-                 worker_prefix='', ps_device=PS_DEVICE_STR, sync_queue_devices=None, num_cpus=1, num_gpus=1):
+                 worker_prefix='', ps_device=PS_DEVICE_STR, sync_queue_devices=None, num_cpus=1, num_gpus=0):
         """
 
         :param str job_name: Name of job ('worker', 'master' or 'ps' / '' for local)
@@ -57,8 +60,14 @@ class Config(object):
         self.num_cpus = num_cpus
         self.num_gpus = num_gpus
 
+        assert num_gpus + num_cpus > 0
+
         self.cpu_device = '%s/cpu:0' % worker_prefix
-        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in range(num_gpus)]
+        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i)
+                            for i in range(num_gpus if num_gpus > 0 else 1)]
+
+        assert len(self.raw_devices) > 0
+
         self.global_step_device = ps_device if job_name else self.cpu_device
         self.sync_queue_counter = 0
 
@@ -123,7 +132,7 @@ class Config(object):
 
 def create_config_proto():
     config = tf.ConfigProto()
-    # config.allow_soft_placement = True
+    config.allow_soft_placement = True
     # config.log_device_placement = True
     config.intra_op_parallelism_threads = OP_PARALLELISM_THREADS
     config.inter_op_parallelism_threads = OP_PARALLELISM_THREADS
@@ -179,7 +188,7 @@ def config_factory():
     server = tf.train.Server(cluster, job_name, task_index, FLAGS.server_protocol, create_config_proto())
 
     if job_name == 'ps':  # Return config for parameter server if applicable
-        return Config.ps_server(job_name=job_name, task_index=task_index, cluster=cluster, server=server)
+        return Config.ps_server(task_index=task_index, cluster=cluster, server=server)
 
     # Set device strings for training / variables / ops placement
     worker_prefix = '/job:{}/task:{}'.format(job_name, task_index)
@@ -198,7 +207,7 @@ def load_env_flags():
 
     assert isinstance(FLAGS.winograd_nonfused, bool)
     assert isinstance(FLAGS.sync_on_finish, bool)
-    assert isinstance(FLAGS.autotune_threshold, int)
+    assert isinstance(FLAGS.autotune_threshold, (int, type(None)))
 
     if FLAGS.winograd_nonfused:
         os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'

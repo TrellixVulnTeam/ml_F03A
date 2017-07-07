@@ -5,9 +5,15 @@ import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops as df_ops
 
-from trainer2.layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
-from trainer2 import datasets
-from trainer2 import flags
+try:
+    from trainer2.layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
+    from trainer2 import datasets
+    from trainer2 import flags
+except ImportError:
+    from layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
+    import datasets
+    import flags
+
 FLAGS = flags.get_flags()
 
 

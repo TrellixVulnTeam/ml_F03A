@@ -9,7 +9,7 @@ tf.flags.DEFINE_boolean(
     'WhetherRun training or evaluation.')
 
 tf.flags.DEFINE_integer(
-    'debug_level', 1,
+    'debug_level', 5,
     'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
 
 #############
@@ -17,12 +17,12 @@ tf.flags.DEFINE_integer(
 #############
 
 tf.flags.DEFINE_integer(
-    'batch_size', 64,
+    'batch_size', 16,
     'batch size per compute device'
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 500,
+    'num_batches', 10,
     'Number of batches (per worker) to run.'
 )
 
@@ -41,7 +41,7 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_string(
-    'device', 'gpu',
+    'device', 'cpu',
     'Device to use for computation: cpu or gpu'
 )
 
@@ -123,8 +123,10 @@ tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which
 #############
 
 tf.flags.DEFINE_string(
-    # 'data_dir', '../data/data/train',
-    'data_dir', None, 'Path to dataset in TFRecord format. If not specified, synthetic data will be used.')
+    'data_dir', '../data/data/train_local',
+    # 'data_dir', None,
+    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
+)
 
 tf.flags.DEFINE_string('data_format', 'NHWC', 'Data layout to use: NHWC (TF native) or NCHW (cuDNN native).')
 
@@ -156,7 +158,10 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_integer('save_model_secs', 300, 'How often to save trained models. Pass 0 to disable checkpoints')
 
-tf.flags.DEFINE_string('train_dir', None, 'Path to session checkpoints.')
+tf.flags.DEFINE_string(
+    'train_dir', 'train_data',
+    'Path to session checkpoints.'
+)
 
 tf.flags.DEFINE_string('eval_dir', 'train_eval', 'Directory where to write eval event logs.')
 

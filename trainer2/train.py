@@ -54,11 +54,10 @@ class Trainer(object):
             with tf.Graph().as_default():
                 self.train()
 
-    def log(self, string, debug_level=1, chief_only=False):
-        if chief_only and self.config.is_chief:
-            if FLAGS.debug_level > 3:
-                string = '{}-{}: {}'.format(self.config.job_name, self.config.task_index, string)
-            util.log_fn(string, debug_level)
+    def log(self, string, debug_level=1):
+        if FLAGS.debug_level > 3:
+            string = '{}-{}: {}'.format(self.config.job_name, self.config.task_index, string)
+        util.log_fn(string, debug_level)
 
     def train(self):
 
@@ -109,7 +108,7 @@ class Trainer(object):
 
             self.supervisor.write_graph_file(sess, self.config.job_name)
 
-            self.log('Running warm up', 2, True)
+            self.log('Running warm up', 2)
             local_step = -1 * self.num_warmup_batches
 
             def should_stop():
@@ -122,7 +121,7 @@ class Trainer(object):
             while not should_stop():
 
                 if local_step == 0:
-                    self.log('Done warm up', 3, True)
+                    self.log('Done warm up', 3)
 
                     if execution_barrier:
                         self.log('Waiting for other replicas to finish warm up', 3)
@@ -167,7 +166,10 @@ class Trainer(object):
         """Print basic information."""
         self.log('Task:       %s' % self.config.job_name)
         self.log('Batch size:  %s global' % self.batch_size)
-        self.log('             %s per device' % (self.batch_size / len(self.devices)))
+        try:
+            self.log('             %s per device' % (self.batch_size / len(self.devices)))
+        except ZeroDivisionError:
+            self.log('NO GUPS')
         self.log('Devices:     %s' % self.config.raw_devices)
         self.log('Data format: %s' % self.data_format)
         self.log('Optimizer:   %s' % FLAGS.optimizer)

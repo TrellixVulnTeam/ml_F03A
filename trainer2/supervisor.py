@@ -7,8 +7,13 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 
-from trainer2 import flags
-from trainer2.config import create_config_proto
+try:
+    from trainer2 import flags
+    from trainer2.config import create_config_proto
+except ImportError:
+    import flags
+    from config import create_config_proto
+
 FLAGS = flags.get_flags()
 
 
@@ -17,6 +22,7 @@ class Supervisor(tf.train.Supervisor):
     Helper class for training supervisor (inherieted from tf.train.Supervisor)
     """
     def __init__(self, train_dir, write_summary, save_steps, *args, **kwargs):
+        assert train_dir is not None, 'Invalid train dir path.'
         super(Supervisor, self).__init__(*args, **kwargs)
         self.write_summary = write_summary
         self.train_dir = train_dir

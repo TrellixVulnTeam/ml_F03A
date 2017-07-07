@@ -278,8 +278,7 @@ class BenchmarkCNN(object):
 
         # Device to use for ops that need to always run on the local worker's
         # compute device, and never on a parameter server device.
-        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i)
-                            for i in xrange(FLAGS.num_gpus)]
+        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i) for i in xrange(FLAGS.num_gpus)]
 
         if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
             raise ValueError('staged_vars for now is only supported with '
