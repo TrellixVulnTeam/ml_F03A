@@ -22,7 +22,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 1000,
+    'num_batches', 500,
     'Number of batches (per worker) to run.'
 )
 
@@ -210,7 +210,7 @@ tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primit
 
 tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
 
-tf.flags.DEFINE_boolean('cross_replica_sync', False, '')
+tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
 
 
 def get_flags():
