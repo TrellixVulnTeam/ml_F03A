@@ -7,21 +7,31 @@ declare -r DATA_PATH=${BUCKET}/data
 declare -r JOB_NAME="tune_$(date +%H%M%S)"
 declare -r OUTPUT_PATH=${BUCKET}/${JOB_NAME}
 
-declare -r MODEL_NAME=imagenet
-declare -r VERSION_NAME=v1
+declare -r MODEL_NAME=ml_training
+declare -r VERSION_NAME=v0
+declare -r RUNTIME_VERSION=1.2
 
 echo
 echo "Using job id: " $JOB_NAME
-set -v -e
+# set -v -e
 
 gcloud ml-engine jobs submit training $JOB_NAME \
 --job-dir $OUTPUT_PATH \
---runtime-version 1.2 \
+--runtime-version $RUNTIME_VERSION \
 --module-name trainer2.main \
---package-path trainer2/ \
---config config/hyperparam.yaml \
+--package-path ./trainer2/ \
+--config ./config/hyperparam.yaml \
 -- \
 --data_dir "${DATA_PATH}/data/train" \
 --train_dir "${BUCKET}/summary/${JOB_NAME}" \
 --trace_file "${BUCKET}/summary/trace/trace.json" \
 --graph_file "${BUCKET}/summary/${JOB_NAME}/graph.txt" \
+
+# Create model
+# gcloud ml-engine models create $MODEL_NAME
+
+# Save version
+# gcloud ml-engine versions create $VERSION_NAME \
+#   --model "$MODEL_NAME" \
+#   --origin "${GCS_PATH}/training/model" \
+#   --runtime-version=$RUNTIME_VERSION

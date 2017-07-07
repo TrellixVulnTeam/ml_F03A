@@ -2,8 +2,6 @@
 setup.py
 data/__init__.py
 data/build_data.py
-data/build_image_data.py
-data/build_imagenet_data.py
 data/image_coder.py
 data/image_util.py
 data/process_bounding_boxes.py
@@ -17,7 +15,6 @@ tests/test_trainer.py
 trainer2/__init__.py
 trainer2/config.py
 trainer2/datasets.py
-trainer2/eval.py
 trainer2/flags.py
 trainer2/global_step.py
 trainer2/input.py
