@@ -2,10 +2,7 @@
 import threading
 import time
 
-try:
-    from trainer2.util import log_fn
-except ImportError:
-    from util import log_fn
+from trainer2.util import log_fn
 
 
 class GlobalStepWatcher(threading.Thread):

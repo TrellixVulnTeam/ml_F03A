@@ -7,12 +7,8 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 
-try:
-    from trainer2 import flags
-    from trainer2.config import create_config_proto
-except ImportError:
-    import flags
-    from config import create_config_proto
+from trainer2 import flags
+from trainer2.config import create_config_proto
 
 FLAGS = flags.get_flags()
 

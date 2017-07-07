@@ -27,10 +27,7 @@ from tensorflow.contrib import nccl
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import data_flow_ops
 
-try:
-    from trainer2.flags import get_flags
-except ImportError:
-    from flags import get_flags
+from trainer2.flags import get_flags
 
 PS_SHADOW_VAR_PREFIX = 'ps_var'
 FLAGS = get_flags()

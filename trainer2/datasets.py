@@ -2,12 +2,8 @@ import os
 
 import tensorflow as tf
 
-try:
-    from trainer2.input import ImagePreprocessor as ImProc
-    from trainer2 import flags
-except ImportError:
-    from input import ImagePreprocessor as ImProc
-    import flags
+from trainer2.input import ImagePreprocessor as ImProc
+from trainer2 import flags
 
 FLAGS = flags.get_flags()
 

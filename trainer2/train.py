@@ -5,22 +5,13 @@ import time
 import numpy as np
 import tensorflow as tf
 
-try:
-    from trainer2 import datasets
-    from trainer2 import flags
-    from trainer2 import manager
-    from trainer2 import util
-    from trainer2.global_step import GlobalStepWatcher
-    from trainer2.model import Model
-    from trainer2.supervisor import Supervisor
-except ImportError:
-    import datasets
-    import flags
-    import manager
-    import util
-    from global_step import GlobalStepWatcher
-    from model import Model
-    from supervisor import Supervisor
+from trainer2 import datasets
+from trainer2 import flags
+from trainer2 import manager
+from trainer2 import util
+from trainer2.global_step import GlobalStepWatcher
+from trainer2.model import Model
+from trainer2.supervisor import Supervisor
 
 
 FLAGS = flags.get_flags()

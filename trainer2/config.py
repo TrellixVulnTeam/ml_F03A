@@ -7,10 +7,7 @@ import os
 
 import tensorflow as tf
 
-try:
-    from trainer2 import flags
-except ImportError:
-    import flags
+from trainer2 import flags
 
 FLAGS = flags.get_flags()
 PS_DEVICE_STR = '/{}:0'.format(FLAGS.local_parameter_device)

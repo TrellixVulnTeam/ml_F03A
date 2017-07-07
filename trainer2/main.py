@@ -3,12 +3,8 @@ Main script for running training session
 """
 import tensorflow as tf
 
-try:
-    from trainer2.train import Trainer
-    from trainer2.config import config_factory
-except ImportError:
-    from train import Trainer
-    from config import config_factory
+from trainer2.train import Trainer
+from trainer2.config import config_factory
 
 
 def main(_):

@@ -1,9 +1,6 @@
 import tensorflow as tf
 
-try:
-    from trainer2 import flags
-except ImportError:
-    import flags
+from trainer2 import flags
 
 FLAGS = flags.get_flags()
 
