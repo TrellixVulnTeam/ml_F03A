@@ -2,8 +2,8 @@ import os
 
 import tensorflow as tf
 
-from trainer2.input import ImagePreprocessor as ImProc
 from trainer2 import flags
+from trainer2.input import ImagePreprocessor as ImProc
 
 FLAGS = flags.get_flags()
 
@@ -27,13 +27,16 @@ class Dataset(object):
 
         if isinstance(self, (ImgData, ImagenetData)):
             assert data_dir is not None, 'Invalid data_dir type, in Dataset constructor.'
-            try:
+            assert isinstance(data_dir, str), 'data_dir path must be a string.'
+            if 'gs://' in data_dir:
                 assert os.path.isdir(data_dir)
-            except AssertionError:
-                if 'gs://' in data_dir:
-                    pass
-                else:
-                    raise AssertionError('Invalid data_dir parameter')
+            # try:
+            #
+            # except AssertionError:
+            #     if 'gs://' in data_dir:
+            #         pass
+            #     else:
+            #         raise AssertionError('Invalid data_dir parameter')
 
         self.data_dir = data_dir
         self.image_size = image_size
