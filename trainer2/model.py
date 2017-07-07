@@ -1,6 +1,7 @@
 # https://danijar.github.io/structuring-your-tensorflow-models
 import six
 
+import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.ops import data_flow_ops as df_ops
@@ -31,9 +32,9 @@ class Model:
         :param l2_loss:
         :param data_format:
         """
-        assert self.learning_rate > 0.0
-        assert len(self.layers) > 0
-        assert self.name is not None
+        assert initial_lr > 0.0
+        assert len(layers) > 0
+        assert name is not None
 
         self.name = name
         self.layers = layers
@@ -68,15 +69,8 @@ class Model:
         return self.l2_loss * sum(weights)
 
     def build_graph(self, config, manager):
-
-        phase_train = self.run_training
-        use_synthetic_gpu_images = self.dataset.synthetic
-
-        data_type = tf.float32
-        input_data_type = tf.float32
-        input_nchan = 3
         tf.set_random_seed(1234)
-        # np.random.seed(4321)
+        np.random.seed(4321)
 
         enqueue_ops = []
         losses = []
@@ -114,7 +108,7 @@ class Model:
                 results = self.forward_pass(images, labels, dev, manager.devices[dev], gpu_compute_stage_ops,
                                             manager.trainable_variables_on_device)
 
-                if phase_train:
+                if self.run_training:
                     losses.append(results[0])
                     device_grads.append(results[1])
                 else:
