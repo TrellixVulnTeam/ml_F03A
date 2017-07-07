@@ -6,11 +6,11 @@ trainingInput:
   workerCount: 1
   parameterServerCount: 1
   region: us-east1
-    hyperparameters:
+  hyperparameters:
     goal: MINIMIZE
-    hyperparameterMetricTag: accuracy
-    maxTrials: 4
+    hyperparameterMetricTag: total_loss
+    maxTrials: 3
     params:
-      - parameterName: optimizer
-        type: CATEGORICAL
-        categoricalValues: ['sgd', 'momentum', 'rmsprop']
+    - parameterName: optimizer
+      type: CATEGORICAL
+      categoricalValues: ['sgd', 'momentum', 'rmsprop']

@@ -9,7 +9,7 @@ tf.flags.DEFINE_boolean(
     'WhetherRun training or evaluation.')
 
 tf.flags.DEFINE_integer(
-    'debug_level', 5,
+    'debug_level', 3,
     'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
 
 #############
@@ -17,7 +17,7 @@ tf.flags.DEFINE_integer(
 #############
 
 tf.flags.DEFINE_integer(
-    'batch_size', 16,
+    'batch_size', 64,
     'batch size per compute device'
 )
 
@@ -41,7 +41,7 @@ tf.flags.DEFINE_string(
 )
 
 tf.flags.DEFINE_string(
-    'device', 'cpu',
+    'device', 'gpu',
     'Device to use for computation: cpu or gpu'
 )
 
@@ -123,8 +123,8 @@ tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which
 #############
 
 tf.flags.DEFINE_string(
-    'data_dir', '../data/data/train_local',
-    # 'data_dir', None,
+    # 'data_dir', '../data/data/train_local',
+    'data_dir', None,
     'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
 

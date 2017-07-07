@@ -171,6 +171,8 @@ def config_factory():
     cluster_data = env.get('cluster', None)
     task_data = env.get('task', None)
 
+    FLAGS.train_dir = make_trial_path(task_data, FLAGS.train_dir)
+
     # Print the job data as provided by the service.
     # tf.logging.info('Original job data: %s', job_data)
     try:
@@ -203,6 +205,25 @@ def config_factory():
 
     return Config(job_name, task_index, is_chief, ps_tasks, worker_tasks, cluster, server, worker_prefix, ps_device,
                   sync_queue_devices, num_cpus, num_gpus)
+
+
+def make_trial_path(task_data, output_path):
+    """
+    For a given static output path, returns a path with the hyperparameter tuning
+    trial number appended: [output_path => output_path/{trial_int}]
+
+    :param task_data: Task data from TF_CONFIG environment variable.
+    :param str output_path:
+    :return: str New output path
+    """
+    assert isinstance(output_path, str), 'Output path must be string.'
+
+    if task_data:
+        trial = task_data.get('trial', '')
+        if trial:
+            # assert isinstance(trial, str), 'Trial index-string must be if type str, not {}.'.format(type(trial))
+            return os.path.join(output_path, trial)
+    return output_path
 
 
 def load_env_flags():

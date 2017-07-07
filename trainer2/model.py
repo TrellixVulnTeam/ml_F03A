@@ -1,9 +1,7 @@
 # https://danijar.github.io/structuring-your-tensorflow-models
-import six
-
 import numpy as np
+import six
 import tensorflow as tf
-
 from tensorflow.python.ops import data_flow_ops as df_ops
 
 try:
@@ -157,16 +155,15 @@ class Model:
                 avg_grads = manager.get_gradients_to_apply(d, gradient_state)
 
                 gradient_clip = FLAGS.gradient_clip
-                learning_rate = self.learning_rate
 
                 if (not self.dataset.synthetic) and FLAGS.num_epochs_per_decay > 0:
                     num_batches_per_epoch = (self.dataset.num_examples_per_epoch() / self.batch_size)
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
-                    learning_rate = tf.train.exponential_decay(
-                        self.learning_rate, global_step,
-                        decay_steps, FLAGS.learning_rate_decay_factor, staircase=True)
+                    self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                                                                    decay_steps, FLAGS.learning_rate_decay_factor,
+                                                                    staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [
@@ -175,13 +172,13 @@ class Model:
                 else:
                     clipped_grads = avg_grads
                 # Set optimizer for training
-                opt = tf.train.GradientDescentOptimizer(learning_rate)
-                manager.append_apply_gradients_ops(gradient_state, opt, clipped_grads, training_ops)
+                optimizer = self.get_optimizer(FLAGS.optimizer)
+                manager.append_apply_gradients_ops(gradient_state, optimizer, clipped_grads, training_ops)
         train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
 
         with tf.device(config.cpu_device):
             if config.is_chief and FLAGS.write_summary > 0:
-                tf.summary.scalar('learning_rate', learning_rate)
+                tf.summary.scalar('learning_rate', self.learning_rate)
                 tf.summary.scalar('total_loss', total_loss)
                 for grad, var in avg_grads:
                     if grad is not None:
@@ -190,6 +187,22 @@ class Model:
                     tf.summary.histogram(var.op.name, var)
         fetches = [train_op, total_loss] + enqueue_ops
         return enqueue_ops, fetches
+
+    def get_optimizer(self, optimizer_flag):
+        """
+        Get Training Optimizer from runtime flag.
+        :param optimizer_flag:
+        :return: Training Optimizer
+        """
+        assert optimizer_flag in ['momentum', 'sgd', 'rmsprop'], 'Invalid optimizer value: {}'.format(optimizer_flag)
+
+        if optimizer_flag == 'momentum':
+            return tf.train.MomentumOptimizer(self.learning_rate, FLAGS.momentum, use_nesterov=True)
+        elif optimizer_flag == 'sgd':
+            return tf.train.GradientDescentOptimizer(self.learning_rate)
+        else:
+            return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.rmsprop_momentum,
+                                             epsilon=FLAGS.rmsprop_epsilon)
 
     @staticmethod
     def cpu_gpu_copy(cpu_device, raw_device, host_images, host_labels, gpu_copy_stage_ops, gpu_compute_stage_ops):

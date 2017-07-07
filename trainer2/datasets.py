@@ -27,11 +27,17 @@ class Dataset(object):
     def __init__(self, name, data_dir=None, image_size=64):
         self.name = name
 
+        assert image_size > 0, 'Image size must be positive.'
+
         if isinstance(self, (ImgData, ImagenetData)):
             assert data_dir is not None, 'Invalid data_dir type, in Dataset constructor.'
-            assert os.path.isdir(data_dir)
-
-        assert image_size > 0, 'Image size must be positive.'
+            try:
+                assert os.path.isdir(data_dir)
+            except AssertionError:
+                if 'gs://' in data_dir:
+                    pass
+                else:
+                    raise AssertionError('Invalid data_dir parameter')
 
         self.data_dir = data_dir
         self.image_size = image_size

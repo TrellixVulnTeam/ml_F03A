@@ -6,14 +6,19 @@
 """
 
 """
-import os
 import json
-from unittest.mock import patch
+import os
+
+try:
+    from unittest.mock import patch
+except ImportError:
+    from mock import patch
 
 import tensorflow as tf
 
 from trainer2 import config
 from trainer2.flags import get_flags
+
 FLAGS = get_flags()
 SAMLPLE_TF_CONFIG = {
     'cluster': {
@@ -39,10 +44,12 @@ class SuperTestConfig(tf.test.TestCase):
         self.config = config.Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
                                     sync_queue_devices=[config.PS_DEVICE_STR])
         os.environ['TF_CONFIG'] = json.dumps(SAMLPLE_TF_CONFIG)
+        self.env = json.loads(os.environ.get('TF_CONFIG', '{}'))
 
     def tearDown(self):
         del os.environ['TF_CONFIG']
         self.config = None
+        self.env = None
 
 
 class TestConfig(SuperTestConfig):
@@ -74,6 +81,19 @@ class TestConfig(SuperTestConfig):
         self.assertEqual(tf_config.num_cpus, 1)
         self.assertEqual(tf_config.num_gpus, 0)
         self.assertEqual(tf_config.job_name, '')
+
+    def test_make_trial_path(self):
+        null_task_data = self.env.get('task', None)
+        valid_path = 'train_dir'
+
+        self.assertEqual(config.make_trial_path(null_task_data, valid_path), valid_path)
+        self.assertRaises(AssertionError, config.make_trial_path, null_task_data, True)
+
+        null_task_data['trial'] = '1'
+        self.assertEqual(config.make_trial_path(null_task_data, 'train_dir'), 'train_dir/1')
+
+        null_task_data['trial'] = '✓'
+        self.assertEqual(config.make_trial_path(null_task_data, 'train_dir'), 'train_dir/✓')
 
     def test_env_flags(self):
         with patch.dict(os.environ):

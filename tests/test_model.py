@@ -7,7 +7,9 @@
 
 """
 import tensorflow as tf
+
 from trainer2.model import Model
+
 
 class SuperTestModel(tf.test.TestCase):
 
@@ -32,6 +34,9 @@ class TestModel(SuperTestModel):
 
     def test_cpu_gpu_copy(self):
         pass
+
+    def test_get_optimizer(self):
+        self.assertIsInstance(self.model.get_optimizer('sgd'), tf.train.GradientDescentOptimizer)
 
     def test_reformat_images(self):
         self.model.data_format = 'NCHW'
