@@ -3,12 +3,8 @@
 # ml
 #
 
-"""
-
-"""
-import os
-
 import tensorflow as tf
+
 from trainer2 import datasets
 
 
@@ -26,7 +22,7 @@ class TestDataset(SuperDatasetConfig):
 
     def test_dataset(self):
         with self.assertRaises(AssertionError):
-            datasets.DatasetFactory.create_dataset('this/very/unliekly/path')
+            datasets.DatasetFactory.create_dataset('this/very/unlikely/path')
             datasets.DatasetFactory.create_dataset(45)
             datasets.DatasetFactory.create_dataset(None)
 
@@ -45,7 +41,9 @@ class TestDataset(SuperDatasetConfig):
         self.assertIsInstance(self.imageDataset.reader(), tf.TFRecordReader)
 
     def test_num_classes(self):
-        pass
+        self.assertEqual(self.syntheticDataset.num_classes(), 1000)
+        self.assertEqual(self.imageDataset.num_classes(), 11)
 
     def test_num_examples_per_epoch(self):
-        pass
+        self.assertRaises(ValueError, self.imageDataset.num_examples_per_epoch, 'train__')
+        self.assertRaises(AssertionError, self.syntheticDataset.num_examples_per_epoch, 'train')

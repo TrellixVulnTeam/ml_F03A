@@ -111,13 +111,14 @@ class SyntheticData(Dataset):
         return 1000
 
     def num_examples_per_epoch(self, subset='train'):
-        pass
+        assert False, 'Should not be called for Synthetic data.'
 
     def preprocess(self, batch_size, num_comp_devices, train=True):
         """Add image Preprocessing ops to tf graph."""
         assert num_comp_devices > 0
         assert batch_size > 0
         assert isinstance(train, bool)
+
         nclass = 1001
         input_shape = [batch_size, self.image_size, self.image_size, self.input_channels]
         images = tf.truncated_normal(input_shape, dtype=self.input_data_type, stddev=1e-1, name='synthetic_images')
