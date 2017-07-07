@@ -1,5 +1,7 @@
 # Deep Learning in HPC 
 
+[![Build Status](https://travis-ci.com/eskilj/ml.svg?token=XGRP376xWsF66tXxMV16&branch=master)](https://travis-ci.com/eskilj/ml)
+
 MSc project on Deep Learning
 
 ## Getting Started
