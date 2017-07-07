@@ -22,7 +22,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 10,
+    'num_batches', 1000,
     'Number of batches (per worker) to run.'
 )
 

@@ -20,6 +20,21 @@ FLAGS = flags.get_flags()
 class Model:
     def __init__(self, name, layers, run_training=FLAGS.run_training, activation=tf.nn.relu, train_epochs=10,
                  initial_lr=0.005, l2_loss=None, data_format=FLAGS.data_format):
+        """
+
+        :param name:
+        :param layers:
+        :param run_training:
+        :param activation:
+        :param train_epochs:
+        :param initial_lr:
+        :param l2_loss:
+        :param data_format:
+        """
+        assert self.learning_rate > 0.0
+        assert len(self.layers) > 0
+        assert self.name is not None
+
         self.name = name
         self.layers = layers
         self.run_training = run_training
@@ -32,12 +47,6 @@ class Model:
         self.data_format = data_format
         # self.input_data_type = tf.float32
         self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
-        self.__check_init()
-
-    def __check_init(self):
-        assert self.learning_rate > 0.0
-        assert len(self.layers) > 0
-        assert self.name is not None
 
     def get_layers(self, inputs):
 

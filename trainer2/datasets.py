@@ -26,8 +26,11 @@ class Dataset(object):
 
     def __init__(self, name, data_dir=None, image_size=64):
         self.name = name
-        if data_dir is None and isinstance(self, (ImgData, ImagenetData)):
-            raise ValueError('Data directory not specified')
+
+        if isinstance(self, (ImgData, ImagenetData)):
+            assert data_dir is not None, 'Invalid data_dir type, in Dataset constructor.'
+            assert os.path.isdir(data_dir)
+
         self.data_dir = data_dir
         self.image_size = image_size
         self.input_channels = 3
