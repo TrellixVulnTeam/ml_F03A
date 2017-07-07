@@ -172,8 +172,7 @@ def config_factory():
     task_data = env.get('task', None)
 
     # Print the job data as provided by the service.
-    tf.logging.info('Original job data: %s', job_data)
-
+    # tf.logging.info('Original job data: %s', job_data)
     try:
         ps_tasks = cluster_data.get('ps')
         worker_tasks = cluster_data.get('worker', []) + cluster_data.get('master')
@@ -182,6 +181,9 @@ def config_factory():
         num_cpus, num_gpus = get_cloud_ml_device_count(job_data, job_name)
     except AttributeError:
         return Config.local_config()
+    else:
+        if cluster_data.get('master') and not ps_tasks:
+            return Config.local_config()
 
     # Create cluster spec and start server:
     cluster = tf.train.ClusterSpec(cluster_data)
