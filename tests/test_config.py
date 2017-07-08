@@ -8,13 +8,9 @@
 """
 import json
 import os
-
-try:
-    from unittest.mock import patch
-except ImportError:
-    from mock import patch
-
-import tensorflow as tf
+from unittest import TestCase
+# noinspection PyCompatibility
+from unittest.mock import patch
 
 from trainer2 import config
 from trainer2.flags import get_flags
@@ -39,7 +35,7 @@ SAMLPLE_TF_CONFIG = {
 }
 
 
-class SuperTestConfig(tf.test.TestCase):
+class SuperTestConfig(TestCase):
     def setUp(self):
         self.config = config.Config(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
                                     sync_queue_devices=[config.PS_DEVICE_STR])

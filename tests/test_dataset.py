@@ -3,12 +3,14 @@
 # ml
 #
 
+from unittest import TestCase
+
 import tensorflow as tf
 
 from trainer2 import datasets
 
 
-class SuperDatasetConfig(tf.test.TestCase):
+class SuperDatasetConfig(TestCase):
     def setUp(self):
         self.imageDataset = datasets.DatasetFactory.create_dataset(data_dir='../data/data')
         self.syntheticDataset = datasets.DatasetFactory.create_dataset(None)

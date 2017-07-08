@@ -6,10 +6,9 @@
 """
 
 """
-import tensorflow as tf
+from unittest import TestCase
 
-
-class TestSupervisor(tf.test.TestCase):
+class TestSupervisor(TestCase):
     def test_run_session(self):
         pass
 
