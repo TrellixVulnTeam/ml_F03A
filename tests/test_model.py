@@ -6,12 +6,14 @@
 """
 
 """
+from unittest import TestCase
+
 import tensorflow as tf
 
 from trainer2.model import Model
 
 
-class SuperTestModel(tf.test.TestCase):
+class SuperTestModel(TestCase):
 
     def setUp(self):
         self.model = Model.trial()
