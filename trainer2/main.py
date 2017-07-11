@@ -14,7 +14,7 @@ def main(_):
         config.server.join()
         return
 
-    Trainer(config=config).run()
+    Trainer(runtime_config=config).run()
 
 
 if __name__ == '__main__':

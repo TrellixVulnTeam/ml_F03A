@@ -56,6 +56,7 @@ class SuperTestConfig(TestCase):
                                     sync_queue_devices=[config.PS_DEVICE_STR])
         os.environ['TF_CONFIG'] = json.dumps(SAMLPLE_TF_CONFIG)
         self.env = json.loads(os.environ.get('TF_CONFIG', '{}'))
+        FLAGS.manager_type = 'local'
 
     def tearDown(self):
         del os.environ['TF_CONFIG']

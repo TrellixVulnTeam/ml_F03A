@@ -59,11 +59,11 @@ class Config(object):
 
         assert num_gpus + num_cpus > 0
 
-        self.cpu_device = '%s/cpu:0' % worker_prefix
-        self.raw_devices = ['%s/%s:%i' % (worker_prefix, FLAGS.device, i)
+        self.cpu_device = '{}/cpu:0'.format(worker_prefix)
+        self.op_devices = ['{}/{}:{}'.format(worker_prefix, FLAGS.device, i)
                             for i in range(num_gpus if num_gpus > 0 else 1)]
 
-        assert len(self.raw_devices) > 0
+        assert len(self.op_devices) > 0
 
         self.global_step_device = ps_device if job_name else self.cpu_device
         self.sync_queue_counter = 0
@@ -114,6 +114,7 @@ class Config(object):
         """
         Convenience method for creating local config object.
         """
+        assert FLAGS.manager_type == 'local', 'Flag manager_type must be "local" for local execution.'
         return cls(job_name='', task_index=0, is_chief=True, ps_tasks=[''], worker_tasks=[''],
                    sync_queue_devices=[PS_DEVICE_STR])
 
@@ -123,18 +124,18 @@ class Config(object):
         Convenience method for creating ps server config object.
         """
         assert isinstance(server, tf.train.Server), 'Config server must be of type tf.train.Server.'
-        return cls(job_name='ps', task_index=task_index, is_chief=False,
-                   cluster=cluster, server=server)
+        return cls(job_name='ps', task_index=task_index, is_chief=False, cluster=cluster, server=server)
 
 
 def create_config_proto():
     config = tf.ConfigProto()
-    # config.allow_soft_placement = True
+    config.allow_soft_placement = True
     # config.log_device_placement = True
+    # config.operation_timeout_in_ms = 5000 # Terminate on long hangs
     config.intra_op_parallelism_threads = OP_PARALLELISM_THREADS
     config.inter_op_parallelism_threads = OP_PARALLELISM_THREADS
-    try:
-        # Only avilable for tf.version > 1.2.0
+
+    try:  # Only avilable for tf.version > 1.2.0
         config.gpu_options.force_gpu_compatible = True
     except AttributeError:
         pass
@@ -147,10 +148,10 @@ def get_cloud_ml_device_count(job_data, job_name):
     ml_macines = {
         'standard': (1, 0),
         'standard_gpu': (1, 1),
-        'complex_model_m_gpu': (1, 4)
+        'complex_model_m_gpu': (1, 4),
+        'large_model': (1, 0)
     }
 
-    # machine_type = job_data['{}_type'.format(job_name if job_name in ['master', 'worker'] else 'parameter_server')]
     try:
         machine_type = job_data['{}_type'.format(job_name if job_name in ['master', 'worker'] else 'parameter_server')]
         return ml_macines[machine_type]
@@ -194,6 +195,7 @@ def config_factory():
 
     # Set device strings for training / variables / ops placement
     worker_prefix = '/job:{}/task:{}'.format(job_name, task_index)
+    # ps_device = tf.train.replica_device_setter(worker_device='{}/cpu:0'.format(worker_prefix), cluster=cluster)
     ps_device = tf.train.replica_device_setter(ps_device='/job:ps', worker_device=worker_prefix, cluster=cluster)
     sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i for i in range(len(ps_tasks))]
 

@@ -150,7 +150,6 @@ class PoolLayer(Layer):
             ksize=[1, 2, 2, 1],
             strides=[1, 2, 2, 1],
             padding=DEFAULT_PADDING,
-            data_format=self.data_format,
             name=self.name)
 
 

@@ -23,57 +23,33 @@ import operator
 
 import tensorflow as tf
 from tensorflow.contrib import nccl
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import data_flow_ops
 
 from trainer2.flags import get_flags
+
+# from tensorflow.python.framework import ops
+# from tensorflow.python.ops import data_flow_ops
 
 PS_SHADOW_VAR_PREFIX = 'ps_var'
 FLAGS = get_flags()
 
 
-def manager_factory(self):
-    """
+def get_manager(manager_type, config):
 
-    :return: VariableMgr
-    """
-    job_name = self.config.job_name
+    assert manager_type in ['ps', 'local', 'dr'], 'Provided manager_type is invalid.'
 
-    if FLAGS.staged_vars and FLAGS.variable_update != 'parameter_server':
-        raise ValueError('staged_vars for now is only supported with --variable_update=parameter_server')
+    if manager_type == 'local':
+        return LocalManager(config)
 
-    # variable_scheme = FLAGS.variable_updat
-    if FLAGS.variable_update == 'parameter_server':
-        if job_name:
-            if not FLAGS.staged_vars:
-                return VariableMgrDistributedFetchFromPS(self)
-            else:
-                return VariableMgrDistributedFetchFromStagedPS(self)
-        else:
-            if not FLAGS.staged_vars:
-                return VariableMgrLocalFetchFromPS(self)
-            else:
-                return VariableMgrLocalFetchFromStagedPS(self)
-    elif FLAGS.variable_update == 'replicated':
-        if job_name:
-            raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
-        return VariableMgrLocalReplicated(self, FLAGS.use_nccl)
-    elif FLAGS.variable_update == 'distributed_replicated':
-        if not job_name:
-            raise ValueError('Invalid --variable_update in local mode: %s' % FLAGS.variable_update)
-        return VariableMgrDistributedReplicated(self)
-    elif FLAGS.variable_update == 'independent':
-        if job_name:
-            raise ValueError('Invalid --variable_update in distributed mode: %s' % FLAGS.variable_update)
-        return VariableMgrIndependent(self)
-    else:
-        raise ValueError('Invalid --variable_update: %s' % FLAGS.variable_update)
+    assert config.job_name is not ''
+    if manager_type == 'ps':
+        return PSManager(config)
+    elif manager_type == 'dr':
+        return DRManager(config)
 
 
 # To be used with custom_getter on tf.get_variable.
 class OverrideCachingDevice(object):
-    def __init__(self, devices, device_for_small_variables,
-                 small_variable_size_threshold):
+    def __init__(self, devices, device_for_small_variables, small_variable_size_threshold):
         self.devices = devices
         self.sizes = [0] * len(self.devices)
         self.device_for_small_variables = device_for_small_variables
@@ -105,13 +81,10 @@ class OverrideToLocalVariableIfNotPsVar(object):
 
         if 'collections' in kwargs:
             collections = kwargs['collections']
-
         if not collections:
-            collections = {tf.GraphKeys.GLOBAL_VARIABLES}
+            collections = set([tf.GraphKeys.GLOBAL_VARIABLES])
         else:
             collections = set(collections.copy())
-
-        # collections = kwargs['collections'] if 'collections' in kwargs else {tf.GraphKeys.GLOBAL_VARIABLES}
 
         collections.remove(tf.GraphKeys.GLOBAL_VARIABLES)
         collections.add(tf.GraphKeys.LOCAL_VARIABLES)
@@ -155,18 +128,14 @@ class VariableMgr(object):
       managed, and how gradients are computed and applied.
     """
 
-    def __init__(self, benchmark_cnn):
-        self.benchmark_cnn = benchmark_cnn
+    def __init__(self, trainer_config):
+        self.config = trainer_config
         self.staging_delta_ops = []
         self.devices = self.get_devices()
 
     def each_tower_has_variables(self):
         """Returns True if each GPU tower of the model has separate variables."""
         assert False, 'Must be implemented in subclass'
-
-    def supports_staged_vars(self):
-        """Whether staged variable management is supported."""
-        return False
 
     def create_outer_variable_scope(self, device_num):
         """Create the tf.variable_scope around all model graph operations."""
@@ -217,7 +186,7 @@ class VariableMgr(object):
 
     def get_post_init_ops(self):
         """Returns ops that should run post-initialization."""
-        return []
+        return None
 
     def get_devices(self):
         """Returns devices to use for computation; includes replica selection."""
@@ -244,33 +213,7 @@ class VariableMgr(object):
         return '{self.__class__.__name__}'.format(self=self)
 
 
-class VariableMgrIndependent(VariableMgr):
-    """VariableMgr that implements the --independent mode for local jobs.
-
-       Each GPU has its own copy of the variables, and gradients are
-       not shared between towers. This can be used to check performance when no data is moved between GPUs.
-    """
-
-    def each_tower_has_variables(self):
-        return True
-
-    def create_outer_variable_scope(self, device_num):
-        return tf.variable_scope('v%s' % device_num)
-
-    def preprocess_device_grads(self, device_grads):
-        return self.benchmark_cnn.devices, device_grads
-
-    def get_gradients_to_apply(self, device_num, gradient_state):
-        device_grads = gradient_state
-        # Note that each grad_and_vars looks like the following:
-        #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        return [grad_and_vars[device_num] for grad_and_vars in zip(*device_grads)]
-
-    def get_devices(self):
-        return self.benchmark_cnn.config.raw_devices
-
-
-class VariableMgrLocalFetchFromPS(VariableMgr):
+class LocalManager(VariableMgr):
     """VariableMgr that implements the --parameter_server mode for local jobs.
 
        Variables are stored on a parameter server.  For each step, each tower gets
@@ -284,7 +227,7 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
         return tf.variable_scope('v', reuse=bool(device_num))
 
     def preprocess_device_grads(self, device_grads):
-        return [self.benchmark_cnn.config.ps_device], device_grads
+        return [self.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -293,249 +236,16 @@ class VariableMgrLocalFetchFromPS(VariableMgr):
             device_grads, use_mean=True)
 
     def get_devices(self):
-        raw_devices = self.benchmark_cnn.config.raw_devices
-        if self.benchmark_cnn.config.local_parameter_device == 'gpu':
-            return [ParamServerDeviceSetter(d, raw_devices) for d in raw_devices]
+        op_devices = self.config.op_devices
+        if self.config.local_parameter_device == 'gpu':
+            return [ParamServerDeviceSetter(d, op_devices) for d in op_devices]
         else:
             return [tf.train.replica_device_setter(
-                worker_device=d, ps_device=self.benchmark_cnn.config.ps_device,
-                ps_tasks=1) for d in raw_devices]
+                worker_device=d, ps_device=self.config.ps_device,
+                ps_tasks=1) for d in op_devices]
 
 
-class StagedModelVariable(object):
-    """Staging variable wrapper that decouples reads and updates.
-
-    This class represents a variable through a staging buffer. Reads from this
-    variable directly gets from the staging buffer. Updates are stacked into
-    another staging buffer, and will be processed later.
-    """
-
-    def __init__(self, real_var, var_stage_get, variable_mgr):
-        """Initializer for the model variables through a staging buffer.
-
-        Args:
-          real_var: the underlying real variable.
-          var_stage_get: the read op from the staging buffer.
-          variable_mgr: the parent variable-manager.
-        """
-        self.real_var = real_var
-        self.var_stage_get = var_stage_get
-        self.variable_mgr = variable_mgr
-
-    def _value(self):
-        """The read access of this variable. The content from the staging buffer."""
-        return self.var_stage_get
-
-    def _ref(self):
-        """Return the underlying variable ref, required by tf.colocate_with."""
-        return self.real_var._ref()  # pylint: disable=protected-access
-
-    @property
-    def dtype(self):
-        """Return the non-reference dtype."""
-        return self.var_stage_get.dtype
-
-    def assign_sub(self, delta, name=None):
-        """Mimic the updates to the variable.
-
-        Args:
-          delta: is pushed into a staging buffer and will be pumped later.
-          name: currently ignored; names of ops and the StagingArea are
-                computed without using this pass name.
-        Returns:
-          The actual updates. The colocation constraint will be reapplied.
-        """
-        # This parameter is ignored: the StagingArea only supports setting
-        # the shared name, not the names of individual ops it uses.
-        del name
-
-        # colocate_with(None, True) clears the colocation constraints.
-        # Push the delta into a staging buffer.
-        with ops.colocate_with(None, True), tf.device(self.var_stage_get.device):
-            delta_staging_area = data_flow_ops.StagingArea(
-                [self.var_stage_get.dtype], shapes=[self.var_stage_get.shape])
-            delta_put_op = delta_staging_area.put([delta])
-            self.variable_mgr.staging_delta_ops.append(delta_put_op)
-            delta_get_op = delta_staging_area.get()
-        # Return the actual updates. The colocation constraint will be reapplied.
-        return self.real_var.assign_sub(delta_get_op)
-
-    @staticmethod
-    # pylint: disable=bad-staticmethod-argument,invalid-name
-    def _TensorConversionFunction(self, dtype=None, name=None, as_ref=False):
-        """Utility function for converting a StagedModelVariable to a Tensor."""
-        del dtype, name  # unused: this function returns the cached ref or value.
-        if as_ref:
-            return self._ref()
-        else:
-            return self._value()
-
-
-# pylint: disable=protected-access
-ops.register_tensor_conversion_function(StagedModelVariable, StagedModelVariable._TensorConversionFunction)
-
-
-class StagedVariableGetter(object):
-    """A variable getter through staging buffers on devices.
-
-    Instead of a caching device, this getter tracks where the variable is used.
-    And on each device, it goes through a staging buffer.
-    """
-
-    def __init__(self, device_num, devices, cpu_device, variable_mgr):
-        """Initializer for StagedVariableGetter.
-
-        Args:
-          device_num: the current device index.
-          devices: a list of all the devices to build towers.
-          cpu_device: a cpu_device for this replica. If None, no cpu-caching is
-              done.
-          variable_mgr: the parent variable manager.
-        """
-        self.device_num = device_num
-        self.devices = devices
-        self.cpu_device = cpu_device
-        self.variable_mgr = variable_mgr
-
-    def __call__(self, getter, name, *args, **kwargs):
-        staging_ops = self.variable_mgr.staging_vars_on_devices[self.device_num]
-        if name in staging_ops:
-            put_op, get_op = staging_ops[name]
-            return get_op
-        real_var = getter(name, *args, **kwargs)
-        shape = kwargs['shape']
-        dtype = kwargs['dtype']
-        trainable = kwargs['trainable']
-        if self.cpu_device:
-            with tf.device(self.cpu_device):
-                # This helps copying the weights from the parameter to this server only
-                # once.
-                if name in self.variable_mgr.staged_vars_on_cpu:
-                    cpu_var = self.variable_mgr.staged_vars_on_cpu[name]
-                else:
-                    cpu_var = tf.identity(real_var)
-                    self.variable_mgr.staged_vars_on_cpu[name] = cpu_var
-            var_to_stage = cpu_var
-        else:
-            var_to_stage = real_var
-
-        with tf.device(self.devices[self.device_num]):
-            staging_area = data_flow_ops.StagingArea([dtype], shapes=[shape])
-            put_op = staging_area.put([var_to_stage])
-            get_op = staging_area.get()
-            staging_ops[name] = (put_op, get_op)
-        if trainable:
-            # For trainable variables, they are managed separatedly through
-            # apply_gradients.
-            return get_op
-        else:
-            # For other shadow variables, the access is decoupled through a wrapper
-            # class.
-            return StagedModelVariable(real_var, get_op, self.variable_mgr)
-
-    def trainable_variables_on_device(self, device_num, writable):
-        """Return the set of trainable variables on the specified device.
-
-        Args:
-          device_num: the specified device index.
-          writable: whether the returned variables is writable or read-only.
-
-        Returns:
-          Return the set of trainable variables on the specified device.
-        """
-        params_refs = tf.trainable_variables()
-        if writable:
-            return params_refs
-        params = []
-        for param in params_refs:
-            var_name = param.name.split(':')[0]
-            _, var_get_op = self.variable_mgr.staging_vars_on_devices[device_num][
-                var_name]
-            params.append(var_get_op)
-        return params
-
-
-class VariableMgrLocalFetchFromStagedPS(VariableMgrLocalFetchFromPS):
-    """Implements fetching a local variable through staging buffers.
-    """
-
-    def __init__(self, benchmark_cnn):
-        super(VariableMgrLocalFetchFromStagedPS, self).__init__(benchmark_cnn)
-        # A data structure to track where the variables are used on each device.
-        # Indexed by device_num and var_name, each entry stores the "put" and "get"
-        # ops used for that variable on that device:
-        #   staging_vars_on_devices[device_num][var_name] == (put_op, get_op)
-        self.staging_vars_on_devices = [dict() for _ in
-                                        self.benchmark_cnn.config.raw_devices]
-
-    def supports_staged_vars(self):
-        return True
-
-    def create_outer_variable_scope(self, device_num):
-        self._custom_getter = StagedVariableGetter(device_num, self.benchmark_cnn.config.raw_devices, None, self)
-        return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
-
-    def trainable_variables_on_device(self, device_num, writable=False):
-        return self._custom_getter.trainable_variables_on_device(
-            device_num, writable=writable)
-
-
-class VariableMgrLocalReplicated(VariableMgr):
-    """VariableMgr that implements the --replicated mode for local jobs.
-
-       Each GPU has its own copy of the variables. To apply gradients,
-       either nccl all-reduce or a regular cross-device aggregation is used to
-       replicate the combined gradients to all towers.
-    """
-
-    def __init__(self, benchmark_cnn, use_nccl):
-        super(VariableMgrLocalReplicated, self).__init__(benchmark_cnn)
-        self._use_nccl = use_nccl
-
-    def each_tower_has_variables(self):
-        return True
-
-    def create_outer_variable_scope(self, device_num):
-        return tf.variable_scope('v%s' % device_num)
-
-    def preprocess_device_grads(self, device_grads):
-        if self._use_nccl:
-            aggregated_device_grads = sum_gradients_all_reduce(
-                device_grads, self.benchmark_cnn.devices)
-        else:
-            agg_grads = aggregate_gradients_using_copy_with_device_selection(
-                self.benchmark_cnn, device_grads, use_mean=False)
-            aggregated_device_grads = []
-            for arr in device_grads:
-                aggregated_device_grads.append(
-                    [(g, v) for (_, v), (g, _) in zip(arr, agg_grads)])
-        return (self.benchmark_cnn.devices, aggregated_device_grads)
-
-    def get_gradients_to_apply(self, device_num, gradient_state):
-        device_grads = gradient_state
-        # Note that each grad_and_vars looks like the following:
-        #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        return [grad_and_vars[device_num] for grad_and_vars in zip(*device_grads)]
-
-    def get_post_init_ops(self):
-        # Copy initialized values for variables on GPU 0 to other GPUs.
-        global_vars = tf.global_variables()
-        var_by_name = dict([(v.name, v) for v in global_vars])
-        post_init_ops = []
-        for v in global_vars:
-            split_name = v.name.split('/')
-            if split_name[0] == 'v0' or not v.name.startswith('v'):
-                continue
-            split_name[0] = 'v0'
-            copy_from = var_by_name['/'.join(split_name)]
-            post_init_ops.append(v.assign(copy_from.read_value()))
-        return post_init_ops
-
-    def get_devices(self):
-        return self.benchmark_cnn.config.raw_devices
-
-
-class VariableMgrDistributedFetchFromPS(VariableMgr):
+class PSManager(VariableMgr):
     """Implements --variable_update=parameter_server mode for distributed jobs.
 
        Variables are stored on a parameter server.  For each step, each tower gets
@@ -547,16 +257,16 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
         return False
 
     def create_outer_variable_scope(self, device_num):
-        if self.benchmark_cnn.config.local_parameter_device == 'gpu':
-            caching_devices = self.benchmark_cnn.config.raw_devices
+        if self.config.local_parameter_device == 'gpu':
+            caching_devices = self.config.op_devices
         else:
-            caching_devices = [self.benchmark_cnn.config.cpu_device]
-        custom_getter = OverrideCachingDevice(caching_devices, self.benchmark_cnn.config.cpu_device, 1024 * 64)
+            caching_devices = [self.config.cpu_device]
+        custom_getter = OverrideCachingDevice(caching_devices, self.config.cpu_device, 1024 * 64)
         return tf.variable_scope('v', reuse=bool(device_num), custom_getter=custom_getter)
 
     def preprocess_device_grads(self, device_grads):
         # Returns (gradient_devices, gradient_state)
-        return [self.benchmark_cnn.config.ps_device], device_grads
+        return [self.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         assert device_num == 0
@@ -564,33 +274,12 @@ class VariableMgrDistributedFetchFromPS(VariableMgr):
 
     def get_devices(self):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
-            len(self.benchmark_cnn.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
-        return [tf.train.replica_device_setter(worker_device=d, cluster=self.benchmark_cnn.config.cluster,
-                ps_strategy=ps_strategy) for d in self.benchmark_cnn.config.raw_devices]
+            len(self.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
+        return [tf.train.replica_device_setter(worker_device=d, cluster=self.config.cluster,
+                ps_strategy=ps_strategy) for d in self.config.op_devices]
 
 
-class VariableMgrDistributedFetchFromStagedPS(VariableMgrDistributedFetchFromPS):
-    """Extends VariableMgrDistributedFetchFromPS for --staged_vars."""
-
-    def __init__(self, benchmark_cnn):
-        super(VariableMgrDistributedFetchFromStagedPS, self).__init__(benchmark_cnn)
-        self.staging_vars_on_devices = [dict() for _ in
-                                        self.benchmark_cnn.config.raw_devices]
-        self.staged_vars_on_cpu = {}
-
-    def create_outer_variable_scope(self, device_num):
-        self._custom_getter = StagedVariableGetter(
-            device_num, self.benchmark_cnn.config.raw_devices, self.benchmark_cnn.config.cpu_device, self)
-        return tf.variable_scope('v', reuse=bool(device_num), custom_getter=self._custom_getter)
-
-    def supports_staged_vars(self):
-        return True
-
-    def trainable_variables_on_device(self, device_num, writable=False):
-        return self._custom_getter.trainable_variables_on_device(device_num, writable=writable)
-
-
-class VariableMgrDistributedReplicated(VariableMgr):
+class DRManager(VariableMgr):
     """VariableMgr that implements the --distributed_replicated mode.
 
        Each GPU has a copy of the variables, and updates its copy after the
@@ -606,13 +295,12 @@ class VariableMgrDistributedReplicated(VariableMgr):
         return tf.variable_scope('v%s' % device_num, custom_getter=OverrideToLocalVariableIfNotPsVar())
 
     def preprocess_device_grads(self, device_grads):
-        return [self.benchmark_cnn.config.ps_device], device_grads
+        return [self.config.ps_device], device_grads
 
     def get_gradients_to_apply(self, device_num, gradient_state):
         device_grads = gradient_state  # From 2nd result of preprocess_device_grads.
 
-        avg_grads = aggregate_gradients_using_copy_with_device_selection(
-            self.benchmark_cnn, device_grads, use_mean=True)
+        avg_grads = aggregate_gradients_using_copy_with_device_selection(self.config, device_grads, use_mean=True)
 
         # Make shadow variable for each original trainable variable.
         for i, (g, v) in enumerate(avg_grads):
@@ -633,12 +321,12 @@ class VariableMgrDistributedReplicated(VariableMgr):
         # this.
         for i, (g, v) in enumerate(grads):
             apply_gradient_op = opt.apply_gradients([(g, v)])
-            barrier = self.benchmark_cnn.config.create_sync_queue(
+            barrier = self.config.create_sync_queue(
                 'replicate_variable_%s' % i, [apply_gradient_op])
             with tf.control_dependencies([barrier]):
-                with tf.device(self.benchmark_cnn.config.cpu_device):
+                with tf.device(self.config.cpu_device):
                     updated_value = v.read_value()
-                    for my_d in range(len(self.benchmark_cnn.devices)):
+                    for my_d in range(len(self.config.devices)):
                         training_ops.append(device_grads[my_d][i][1].assign(updated_value))
 
     def get_post_init_ops(self):
@@ -656,15 +344,15 @@ class VariableMgrDistributedReplicated(VariableMgr):
             if v.name.startswith(PS_SHADOW_VAR_PREFIX + '/v0/'):
                 prefix = strip_port(
                     v.name[len(PS_SHADOW_VAR_PREFIX + '/v0'):])
-                for i in range(self.benchmark_cnn.config.num_gpus):
+                for i in range(self.config.num_gpus):
                     name = 'v%s%s' % (i, prefix)
                     if name in local_var_by_name:
                         copy_to = local_var_by_name[name]
                         post_init_ops.append(copy_to.assign(v.read_value()))
-        return post_init_ops
+        return tf.group(*post_init_ops)
 
     def get_devices(self):
-        return self.benchmark_cnn.config.raw_devices
+        return self.config.op_devices
 
 
 def sum_grad_and_var_all_reduce(grad_and_vars, devices):
@@ -688,11 +376,11 @@ def sum_gradients_all_reduce(tower_grads, devices):
     return list(zip(*new_tower_grads))
 
 
-def aggregate_gradients_using_copy_with_device_selection(benchmark_cnn, tower_grads, use_mean):
+def aggregate_gradients_using_copy_with_device_selection(config, tower_grads, use_mean):
     """Aggregate gradients, controlling device for the aggregation.
 
     Args:
-      benchmark_cnn: benchmark_cnn class.
+      config: Trainer/Manager config.
       tower_grads: List of lists of (gradient, variable) tuples. The outer list
         is over individual gradients. The inner list is over the gradient
         calculation for each tower.
@@ -701,10 +389,10 @@ def aggregate_gradients_using_copy_with_device_selection(benchmark_cnn, tower_gr
       List of pairs of (gradient, variable) where the gradient has been averaged
        across all towers.
     """
-    if benchmark_cnn.config.local_parameter_device == 'gpu':
-        avail_devices = benchmark_cnn.config.raw_devices
+    if config.local_parameter_device == 'gpu':
+        avail_devices = config.op_devices
     else:
-        avail_devices = [benchmark_cnn.config.ps_device]
+        avail_devices = [config.ps_device]
     agg_grads = []
     for i, single_grads in enumerate(zip(*tower_grads)):
         with tf.device(avail_devices[i % len(avail_devices)]):
@@ -728,7 +416,7 @@ def aggregate_gradients_using_copy_with_variable_colocation(tower_grads, use_mea
     for _, single_grads in enumerate(zip(*tower_grads)):
         var = single_grads[0][1]
 
-        for _, v in single_grads:
+        for __, v in single_grads:
             assert v == var
 
         with tf.device(var.device):
@@ -754,7 +442,7 @@ def aggregate_gradients_using_copy(tower_grads, use_mean):
     for grad_and_vars in zip(*tower_grads):
         # Note that each grad_and_vars looks like the following:
         #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        grads = []
+        # grads = []
         grads = [g for g, _ in grad_and_vars]
         grad = tf.add_n(grads)
 

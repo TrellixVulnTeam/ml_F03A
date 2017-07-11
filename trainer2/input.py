@@ -117,16 +117,12 @@ def eval_image(image, height, width, bbox, thread_id, resize):
                 'original_image', tf.expand_dims(image, 0))
 
         if resize == 'crop':
-            # Note: This is much slower than crop_to_bounding_box
-            #         It seems that the redundant pad step has huge overhead
-            # distorted_image = tf.image.resize_image_with_crop_or_pad(image,
-            #                                                         height, width)
+
             shape = tf.shape(image)
             y0 = (shape[0] - height) // 2
             x0 = (shape[1] - width) // 2
-            # distorted_image = tf.slice(image, [y0,x0,0], [height,width,3])
-            distorted_image = tf.image.crop_to_bounding_box(image, y0, x0, height,
-                                                            width)
+
+            distorted_image = tf.image.crop_to_bounding_box(image, y0, x0, height, width)
         else:
             sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
                 tf.shape(image),
@@ -293,8 +289,8 @@ def distort_color(image, thread_id=0, scope=None):
 class ImagePreprocessor(object):
     """Preprocessor for input images."""
 
-    def __init__(self, height, width, batch_size, device_count,
-                 dtype=tf.float32, train=True, distortions=None, resize_method=None):
+    def __init__(self, height, width, batch_size, device_count, dtype=tf.float32, train=True, distortions=None,
+                 resize_method=None):
         self.height = height
         self.width = width
         self.batch_size = batch_size
@@ -319,9 +315,6 @@ class ImagePreprocessor(object):
             image = distort_image(image, self.height, self.width, bbox, thread_id)
         else:
             image = eval_image(image, self.height, self.width, bbox, thread_id, self.resize_method)
-        # Note: image is now float32 [height,width,3] with range [0, 255]
-
-        # image = tf.cast(image, tf.uint8) # HACK TESTING
 
         return image
 
@@ -329,17 +322,17 @@ class ImagePreprocessor(object):
         with tf.name_scope('batch_processing'):
             images = [[] for _ in range(self.device_count)]
             labels = [[] for _ in range(self.device_count)]
-            # labels = images[:]
-            record_input = data_flow_ops.RecordInput(
-                file_pattern=dataset.tf_record_pattern(subset),
-                seed=301,
-                parallelism=64,
-                buffer_size=10000,
-                batch_size=self.batch_size,
-                name='record_input')
+
+            # The RecordInput Op will continuously read a batch of records asynchronously
+            # into a buffer of some fixed capacity (source: TF Docs)
+            record_input = data_flow_ops.RecordInput(file_pattern=dataset.tf_record_pattern(subset), seed=301,
+                                                     parallelism=64, buffer_size=10000, batch_size=self.batch_size,
+                                                     name='record_input')
+
             records = record_input.get_yield_op()
             records = tf.split(records, self.batch_size, 0)
             records = [tf.reshape(record, []) for record in records]
+
             for i in range(self.batch_size):
                 value = records[i]
                 image_buffer, label_index, bbox, _ = parse_example_proto(value)
@@ -347,19 +340,19 @@ class ImagePreprocessor(object):
                 device_index = i % self.device_count
                 images[device_index].append(image)
                 labels[device_index].append(label_index)
+
             label_index_batch = [None] * self.device_count
+
             for device_index in range(self.device_count):
                 images[device_index] = tf.parallel_stack(images[device_index])
                 label_index_batch[device_index] = tf.concat(labels[device_index], 0)
 
-                # dynamic_pad=True) # HACK TESTING dynamic_pad=True
                 images[device_index] = tf.cast(images[device_index], self.dtype)
                 depth = 3
                 images[device_index] = tf.reshape(images[device_index],
-                    shape=[self.batch_size_per_device, self.height, self.width, depth])
-                label_index_batch[device_index] = tf.reshape(
-                    label_index_batch[device_index], [self.batch_size_per_device])
-                # Display the training images in the visualizer.
-                # tf.summary.image('images', images)
+                                                  shape=[self.batch_size_per_device, self.height, self.width, depth])
+
+                label_index_batch[device_index] = tf.reshape(label_index_batch[device_index],
+                                                             [self.batch_size_per_device])
 
             return images, label_index_batch

@@ -1,6 +1,5 @@
 # https://danijar.github.io/structuring-your-tensorflow-models
 import numpy as np
-import six
 import tensorflow as tf
 from tensorflow.python.ops import data_flow_ops as df_ops
 
@@ -95,7 +94,7 @@ class Model:
                     images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
                     labels = labels_splits[dev]
                 else:
-                    images, labels = self.cpu_gpu_copy(config.cpu_device, config.raw_devices[dev], images_splits[dev],
+                    images, labels = self.cpu_gpu_copy(config.cpu_device, config.op_devices[dev], images_splits[dev],
                                                        labels_splits[dev], gpu_copy_stage_ops, gpu_compute_stage_ops)
 
                 results = self.forward_pass(images, labels, dev, manager.devices[dev], gpu_compute_stage_ops,
@@ -118,16 +117,9 @@ class Model:
                     staging_delta_ops = list(manager.staging_delta_ops)
 
         if not update_ops:
-            assert isinstance(name_scope, object)
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
 
         enqueue_ops.append(tf.group(*gpu_copy_stage_ops))
-
-        if manager.supports_staged_vars():
-            for staging_ops in manager.staging_vars_on_devices:
-                gpu_compute_stage_ops.extend(
-                    [put_op for _, (put_op, _) in six.iteritems(staging_ops)])
-
         enqueue_ops.append(tf.group(*gpu_compute_stage_ops))
 
         if gpu_grad_stage_ops:
@@ -157,9 +149,9 @@ class Model:
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
-                    self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
-                                                                    decay_steps, FLAGS.learning_rate_decay_factor,
-                                                                    staircase=True)
+                    # self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                    #                                                 decay_steps, FLAGS.learning_rate_decay_factor,
+                    #                                                 staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [(tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
@@ -198,15 +190,17 @@ class Model:
         :param optimizer_flag:
         :return: Training Optimizer
         """
-        assert optimizer_flag in ['momentum', 'sgd', 'rmsprop'], 'Invalid optimizer value: {}'.format(optimizer_flag)
+        assert optimizer_flag in ['momentum', 'sgd', 'rmsprop', 'adam'],\
+            'Invalid optimizer value: {}'.format(optimizer_flag)
 
         if optimizer_flag == 'momentum':
             return tf.train.MomentumOptimizer(self.learning_rate, FLAGS.momentum, use_nesterov=True)
         elif optimizer_flag == 'sgd':
             return tf.train.GradientDescentOptimizer(self.learning_rate)
+        elif optimizer_flag == 'adam':
+            return tf.train.AdamOptimizer(self.learning_rate, epsilon=1.0)
         else:
-            return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.momentum,
-                                             epsilon=FLAGS.rmsprop_epsilon)
+            return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.momentum)
 
     @staticmethod
     def cpu_gpu_copy(cpu_device, raw_device, host_images, host_labels, gpu_copy_stage_ops, gpu_compute_stage_ops):
@@ -246,19 +240,20 @@ class Model:
         aggmeth = tf.AggregationMethod.DEFAULT
         grads = tf.gradients(loss, params, aggregation_method=aggmeth)
 
-        if FLAGS.staged_vars:
-            grad_dtypes = [grad.dtype for grad in grads]
-            grad_shapes = [grad.shape for grad in grads]
-            grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
-            grad_stage_op = grad_stage.put(grads)
-            # In general, this decouples the computation of the gradients and the updates of the weights.
-            # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
-            gpu_grad_stage_ops.append(grad_stage_op)
-            grads = grad_stage.get()
+        # if FLAGS.staged_vars:
+        #     grad_dtypes = [grad.dtype for grad in grads]
+        #     grad_shapes = [grad.shape for grad in grads]
+        #     grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
+        #     grad_stage_op = grad_stage.put(grads)
+        #     # In general, this decouples the computation of the gradients and the updates of the weights.
+        #     # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
+        #     gpu_grad_stage_ops.append(grad_stage_op)
+        #     grads = grad_stage.get()
 
         return grads
 
-    def forward_pass(self, images, labels, device_num, context_device, gpu_grad_stage_ops, trainable_variables_on_device):
+    def forward_pass(self, images, labels, device_num, context_device, gpu_grad_stage_ops,
+                     trainable_variables_on_device):
 
         """Add ops for forward-pass and gradient computations."""
 

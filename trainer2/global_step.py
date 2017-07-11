@@ -12,8 +12,7 @@ class GlobalStepWatcher(threading.Thread):
     number of steps for the global run are done.
     """
 
-    def __init__(self, sess, global_step_op,
-                 start_at_global_step, end_at_global_step):
+    def __init__(self, sess, global_step_op, start_at_global_step, end_at_global_step):
         threading.Thread.__init__(self)
         self.sess = sess
         self.global_step_op = global_step_op

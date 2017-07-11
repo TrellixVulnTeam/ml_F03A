@@ -51,17 +51,16 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_string(
     'optimizer', 'momentum',
-    'Optimizer to use: momentum or sgd or rmsprop'
+    'Optimizer to use: momentum, adam, sgd or rmsprop'
 )
 
 tf.flags.DEFINE_float(
-    # 'learning_rate', 0.00597,
     'learning_rate', 0.0055,
     'Initial learning rate for training.'
 )
 
 tf.flags.DEFINE_float(
-    'num_epochs_per_decay', 5,
+    'num_epochs_per_decay', 0,
     'Steps after which learning rate decays.'
 )
 
@@ -81,11 +80,6 @@ tf.flags.DEFINE_float(
 )
 
 tf.flags.DEFINE_float(
-    'rmsprop_epsilon', 1.0,
-    'Epsilon term for RMSProp.'
-)
-
-tf.flags.DEFINE_float(
     'gradient_clip', None,
     'Gradient clipping magnitude. Disabled by default.'
 )
@@ -102,25 +96,13 @@ tf.flags.DEFINE_integer(
 
 tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which progress is printed out')
 
-# tf.flags.DEFINE_integer(
-#     'num_intra_threads', 0,
-#     'Number of threads to use for intra-op parallelism. If set to 0, the '
-#     'system will pick an appropriate number.'
-# )
-#
-# tf.flags.DEFINE_integer(
-#     'num_inter_threads', 0,
-#     'Number of threads to use for inter-op parallelism. If set to 0, the'
-#     ' system will pick an appropriate number.'
-# )
-
 #############
 # TRAINING DATA
 #############
 
 tf.flags.DEFINE_string(
-    'data_dir', '../data/data/train',
-    # 'data_dir', None,
+    # 'data_dir', '../data/data/train_local',
+    'data_dir', None,
     'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
 
@@ -170,10 +152,11 @@ tf.flags.DEFINE_string(
     'graph_file', None,
     'Write the model\'s graph definition to this file. Defaults to binary format unless filename ends in txt.')
 
-# Use 'grpc' normally, and 'grpc+mpi' on ARCHER
-tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
-
 # Performance tuning flags.
+
+tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
+
+tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
 
 # The method for managing variables:
 #   parameter_server: variables are stored on a parameter server that holds
@@ -182,32 +165,22 @@ tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
 #       execution, the parameter servers are separate processes in the cluster.
 #       For each step, each tower gets a copy of the variables from the
 #       parameter server, and sends its gradients to the param server.
-#   replicated: each GPU has its own copy of the variables. To apply gradients,
-#       nccl all-reduce or regular cross-device aggregation is used to replicate
-#       the combined gradients to all towers (depending on --use_nccl option).
-#   independent: each GPU has its own copy of the variables, and gradients are
-#       not shared between towers. This can be used to check perf. when no
-#       data is moved between GPUs.
 #   distributed_replicated: Distributed training only. Each GPU has a copy of
 #       the variables, and updates its copy after the parameter servers are all
 #       updated with the gradients from all servers. Only works with
 #       cross_replica_sync=true. Unlike 'replicated', currently never uses
 #       nccl all-reduce for replicating within a server.
 tf.flags.DEFINE_string(
-    'variable_update', 'parameter_server',
-    'The method for managing variables: parameter_server, '
-    'replicated, distributed_replicated, independent'
+    'manager_type', 'ps',
+    'The method for managing variables: ps, local or dr'
 )
 
 tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primitives where possible')
 
+# Use 'grpc' normally, and 'grpc+mpi' on ARCHER
+tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
+
 tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
-
-tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
-
-tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
-
-tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged from the main computation.')
 
 
 def get_flags():
