@@ -22,7 +22,6 @@ from __future__ import print_function
 import operator
 
 import tensorflow as tf
-
 from tensorflow.contrib import nccl
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import data_flow_ops
@@ -106,10 +105,14 @@ class OverrideToLocalVariableIfNotPsVar(object):
 
         if 'collections' in kwargs:
             collections = kwargs['collections']
+
         if not collections:
-            collections = set([tf.GraphKeys.GLOBAL_VARIABLES])
+            collections = {tf.GraphKeys.GLOBAL_VARIABLES}
         else:
             collections = set(collections.copy())
+
+        # collections = kwargs['collections'] if 'collections' in kwargs else {tf.GraphKeys.GLOBAL_VARIABLES}
+
         collections.remove(tf.GraphKeys.GLOBAL_VARIABLES)
         collections.add(tf.GraphKeys.LOCAL_VARIABLES)
         kwargs['collections'] = list(collections)
@@ -232,10 +235,7 @@ class VariableMgr(object):
         """
         del writable
         if self.each_tower_has_variables():
-            params = [
-                v for v in tf.trainable_variables()
-                if v.name.startswith('v%s/' % device_num)
-            ]
+            params = [v for v in tf.trainable_variables() if v.name.startswith('v%s/' % device_num)]
         else:
             params = tf.trainable_variables()
         return params
@@ -371,8 +371,8 @@ class StagedModelVariable(object):
             return self._value()
 
 
-ops.register_tensor_conversion_function(
-    StagedModelVariable, StagedModelVariable._TensorConversionFunction)  # pylint: disable=protected-access
+# pylint: disable=protected-access
+ops.register_tensor_conversion_function(StagedModelVariable, StagedModelVariable._TensorConversionFunction)
 
 
 class StagedVariableGetter(object):
@@ -625,8 +625,7 @@ class VariableMgrDistributedReplicated(VariableMgr):
             avg_grads[i] = (g, new_v)
         return avg_grads
 
-    def append_apply_gradients_ops(self, gradient_state, opt,
-                                   grads, training_ops):
+    def append_apply_gradients_ops(self, gradient_state, opt, grads, training_ops):
         device_grads = gradient_state  # From 2nd result of preprocess_device_grads.
 
         # For each variable, apply the combined gradients for this server on
@@ -634,14 +633,13 @@ class VariableMgrDistributedReplicated(VariableMgr):
         # this.
         for i, (g, v) in enumerate(grads):
             apply_gradient_op = opt.apply_gradients([(g, v)])
-            barrier = self.benchmark_cnn.add_sync_queues_and_barrier(
+            barrier = self.benchmark_cnn.config.create_sync_queue(
                 'replicate_variable_%s' % i, [apply_gradient_op])
             with tf.control_dependencies([barrier]):
                 with tf.device(self.benchmark_cnn.config.cpu_device):
                     updated_value = v.read_value()
                     for my_d in range(len(self.benchmark_cnn.devices)):
-                        training_ops.append(
-                            device_grads[my_d][i][1].assign(updated_value))
+                        training_ops.append(device_grads[my_d][i][1].assign(updated_value))
 
     def get_post_init_ops(self):
         # Copy initialized variables for variables on the parameter server

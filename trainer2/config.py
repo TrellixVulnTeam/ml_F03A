@@ -129,7 +129,7 @@ class Config(object):
 
 def create_config_proto():
     config = tf.ConfigProto()
-    config.allow_soft_placement = True
+    # config.allow_soft_placement = True
     # config.log_device_placement = True
     config.intra_op_parallelism_threads = OP_PARALLELISM_THREADS
     config.inter_op_parallelism_threads = OP_PARALLELISM_THREADS
@@ -150,11 +150,12 @@ def get_cloud_ml_device_count(job_data, job_name):
         'complex_model_m_gpu': (1, 4)
     }
 
-    machine_type = job_data['{}_type'.format(job_name if job_name in ['master', 'worker'] else 'parameter_server')]
+    # machine_type = job_data['{}_type'.format(job_name if job_name in ['master', 'worker'] else 'parameter_server')]
     try:
+        machine_type = job_data['{}_type'.format(job_name if job_name in ['master', 'worker'] else 'parameter_server')]
         return ml_macines[machine_type]
     except KeyError:
-        tf.logging.error('Unknown machine instance {} - assuming single CPU.'.format(machine_type))
+        tf.logging.warning('Unknown machine instance - assuming single CPU.')
         return 1, 0
 
 

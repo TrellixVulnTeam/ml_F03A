@@ -1,10 +1,14 @@
 
 import numpy as np
-
 import tensorflow as tf
 from tensorflow.python.layers import convolutional as conv_layers
+
+from trainer2.flags import get_flags
+
 # from contextlib import ExitStack
+
 DEFAULT_PADDING = 'SAME'
+FLAGS = get_flags()
 
 
 def doublewrap(f):
@@ -53,6 +57,7 @@ class Layer(object):
         self._outputs = None
         self.activation = tf.nn.relu
         self.data_type = tf.float32
+        self.data_format = FLAGS.data_format
 
     def outputs(self):
         pass
@@ -66,24 +71,23 @@ class Conv2dLayer2(Layer):
     Layer implementing a 2D convolution-based transformation of its inputs.
     """
 
-    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name, data_format='NHWC'):
+    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name):
         super(Conv2dLayer2, self).__init__(name)
         self.num_input_channels = num_input_channels
         self.num_output_channels = num_output_channels
         self.kernel_dim_1 = kernel_dim_1
         self.kernel_dim_2 = kernel_dim_2
-        self.data_format = data_format
 
     @define_scope
     def outputs(self):
 
         conv = conv_layers.conv2d(
-            self.inputs,
-            self.num_output_channels,
-            [self.kernel_dim_1, self.kernel_dim_2],
+            inputs=self.inputs,
+            filters=self.num_output_channels,
+            kernel_size=[self.kernel_dim_1, self.kernel_dim_2],
             padding=DEFAULT_PADDING,
             use_bias=False,
-            data_format='channels_last'
+            data_format='channels_last' if self.data_format == 'NHWC' else 'channels_first'
         )
 
         biases = tf.get_variable('biases', [self.num_output_channels], self.data_type, tf.constant_initializer(0.0))
@@ -108,12 +112,9 @@ class AffineLayer(Layer):
     def outputs(self):
         init_factor = 2. if self.activation == tf.nn.relu else 1.
 
-        self.weights = tf.get_variable(
-            'weights',
-            [self.num_channels_in, self.num_channels_out],
-            self.data_type,
-            tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in))
-        )
+        self.weights = tf.get_variable('weights', [self.num_channels_in, self.num_channels_out],
+            self.data_type, tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in)))
+
         biases = tf.get_variable('biases', [self.num_channels_out], self.data_type, tf.constant_initializer(0.0))
 
         if self.final_layer:
@@ -149,6 +150,7 @@ class PoolLayer(Layer):
             ksize=[1, 2, 2, 1],
             strides=[1, 2, 2, 1],
             padding=DEFAULT_PADDING,
+            data_format=self.data_format,
             name=self.name)
 
 

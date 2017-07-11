@@ -3,8 +3,8 @@ Main script for running training session
 """
 import tensorflow as tf
 
-from trainer2.train import Trainer
 from trainer2.config import config_factory
+from trainer2.train import Trainer
 
 
 def main(_):

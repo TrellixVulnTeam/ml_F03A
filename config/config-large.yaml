@@ -3,6 +3,6 @@ trainingInput:
   masterType: standard_gpu
   workerType: standard_gpu
   parameterServerType: standard
-  workerCount: 2
+  workerCount: 3
   parameterServerCount: 1
   region: us-east1

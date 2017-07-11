@@ -9,7 +9,7 @@ tf.flags.DEFINE_boolean(
     'WhetherRun training or evaluation.')
 
 tf.flags.DEFINE_integer(
-    'debug_level', 3,
+    'debug_level', 1,
     'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
 
 #############
@@ -22,7 +22,7 @@ tf.flags.DEFINE_integer(
 )
 
 tf.flags.DEFINE_integer(
-    'num_batches', 500,
+    'num_batches', 10000,
     'Number of batches (per worker) to run.'
 )
 
@@ -50,22 +50,23 @@ tf.flags.DEFINE_string(
 #############
 
 tf.flags.DEFINE_string(
-    'optimizer', 'sgd',
+    'optimizer', 'momentum',
     'Optimizer to use: momentum or sgd or rmsprop'
 )
 
 tf.flags.DEFINE_float(
-    'learning_rate', 0.005,
+    # 'learning_rate', 0.00597,
+    'learning_rate', 0.0055,
     'Initial learning rate for training.'
 )
 
 tf.flags.DEFINE_float(
-    'num_epochs_per_decay', 1,
+    'num_epochs_per_decay', 5,
     'Steps after which learning rate decays.'
 )
 
 tf.flags.DEFINE_float(
-    'learning_rate_decay_factor', 0.94,
+    'learning_rate_decay_factor', 0.98999,
     'Learning rate decay factor.'
 )
 
@@ -77,11 +78,6 @@ tf.flags.DEFINE_float(
 tf.flags.DEFINE_float(
     'rmsprop_decay', 0.9,
     'Decay term for RMSProp.'
-)
-
-tf.flags.DEFINE_float(
-    'rmsprop_momentum', 0.9,
-    'Momentum in RMSProp.'
 )
 
 tf.flags.DEFINE_float(
@@ -123,8 +119,8 @@ tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which
 #############
 
 tf.flags.DEFINE_string(
-    # 'data_dir', '../data/data/train_local',
-    'data_dir', None,
+    'data_dir', '../data/data/train',
+    # 'data_dir', None,
     'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
 )
 
@@ -152,11 +148,11 @@ tf.flags.DEFINE_bool(
 )
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 25,
+    'save_summaries_steps', 50,
     'How often to save summaries for trained models. Pass 0 to disable summaries.'
 )
 
-tf.flags.DEFINE_integer('save_model_secs', 300, 'How often to save trained models. Pass 0 to disable checkpoints')
+tf.flags.DEFINE_integer('save_model_secs', 0, 'How often to save trained models. Pass 0 to disable checkpoints')
 
 tf.flags.DEFINE_string(
     'train_dir', 'train_data',
@@ -174,13 +170,10 @@ tf.flags.DEFINE_string(
     'graph_file', None,
     'Write the model\'s graph definition to this file. Defaults to binary format unless filename ends in txt.')
 
+# Use 'grpc' normally, and 'grpc+mpi' on ARCHER
+tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
+
 # Performance tuning flags.
-
-tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
-
-tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
-
-tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged from the main computation.')
 
 # The method for managing variables:
 #   parameter_server: variables are stored on a parameter server that holds
@@ -208,9 +201,13 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primitives where possible')
 
-tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
-
 tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
+
+tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
+
+tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the devices are synced after each step.')
+
+tf.flags.DEFINE_boolean('staged_vars', False, 'whether the variables are staged from the main computation.')
 
 
 def get_flags():

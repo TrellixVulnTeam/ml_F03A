@@ -4,25 +4,24 @@ import six
 import tensorflow as tf
 from tensorflow.python.ops import data_flow_ops as df_ops
 
-from trainer2.layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
 from trainer2 import datasets
 from trainer2 import flags
+from trainer2.layer import PoolLayer, AffineLayer, Conv2dLayer2, ReshapeLayer
 
 FLAGS = flags.get_flags()
 
 
 class Model:
-    def __init__(self, name, layers, run_training=FLAGS.run_training, activation=tf.nn.relu, train_epochs=10,
-                 initial_lr=0.005, l2_loss=None, data_format=FLAGS.data_format):
+    def __init__(self, name, layers, run_training=FLAGS.run_training, activation=tf.nn.relu,
+                 initial_lr=FLAGS.learning_rate, data_format=FLAGS.data_format, num_batches=FLAGS.num_batches,
+                 batch_size=FLAGS.batch_size):
         """
 
         :param name:
         :param layers:
         :param run_training:
         :param activation:
-        :param train_epochs:
         :param initial_lr:
-        :param l2_loss:
         :param data_format:
         """
         assert initial_lr > 0.0
@@ -32,11 +31,10 @@ class Model:
         self.name = name
         self.layers = layers
         self.run_training = run_training
-        self.train_epochs = train_epochs
+        self.num_batches = num_batches
         self.learning_rate = initial_lr
-        self.batch_size = 32
+        self.batch_size = batch_size
         self.activation = activation
-        self.l2_loss = l2_loss
         self.data_type = tf.float32
         self.data_format = data_format
         # self.input_data_type = tf.float32
@@ -54,14 +52,15 @@ class Model:
 
         return next_inputs
 
-    def get_l2_losses(self):
-        weights = []
-        for layer in self.layers:
-            if isinstance(layer, (Conv2dLayer2, AffineLayer)):
-                weights.append(tf.nn.l2_loss(layer.weights))
-        return self.l2_loss * sum(weights)
+    # def get_l2_losses(self):
+    #     weights = []
+    #     for layer in self.layers:
+    #         if isinstance(layer, (Conv2dLayer2, AffineLayer)):
+    #             weights.append(tf.nn.l2_loss(layer.weights))
+    #     return self.l2_loss * sum(weights)
 
     def build_graph(self, config, manager):
+
         tf.set_random_seed(1234)
         np.random.seed(4321)
 
@@ -80,7 +79,8 @@ class Model:
             global_step = tf.contrib.framework.get_or_create_global_step()
 
         with tf.device(config.cpu_device):
-            images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(manager.devices))
+            images_splits, labels_splits = self.dataset.preprocess(self.batch_size, len(manager.devices),
+                                                                   self.run_training)
 
         update_ops = None
         staging_delta_ops = []
@@ -118,6 +118,7 @@ class Model:
                     staging_delta_ops = list(manager.staging_delta_ops)
 
         if not update_ops:
+            assert isinstance(name_scope, object)
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
 
         enqueue_ops.append(tf.group(*gpu_copy_stage_ops))
@@ -161,14 +162,22 @@ class Model:
                                                                     staircase=True)
 
                 if gradient_clip is not None:
-                    clipped_grads = [
-                        (tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
-                        for grad, var in avg_grads]
+                    clipped_grads = [(tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
+                                     for grad, var in avg_grads]
                 else:
                     clipped_grads = avg_grads
+
                 # Set optimizer for training
                 optimizer = self.get_optimizer(FLAGS.optimizer)
+                # optimizer = tf.train.SyncReplicasOptimizer(self.get_optimizer(FLAGS.optimizer), 2, 2)
                 manager.append_apply_gradients_ops(gradient_state, optimizer, clipped_grads, training_ops)
+
+                # Track the moving averages of all trainable variables.
+                # variable_averages = tf.train.ExponentialMovingAverage(0.999, global_step)
+                # variables_averages_op = variable_averages.apply(tf.trainable_variables())
+                # training_ops.append(variables_averages_op)
+                # training_ops = tf.group(training_ops, variables_averages_op)
+
         train_op = tf.group(*(training_ops + update_ops + extra_nccl_ops))
 
         with tf.device(config.cpu_device):
@@ -196,7 +205,7 @@ class Model:
         elif optimizer_flag == 'sgd':
             return tf.train.GradientDescentOptimizer(self.learning_rate)
         else:
-            return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.rmsprop_momentum,
+            return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.momentum,
                                              epsilon=FLAGS.rmsprop_epsilon)
 
     @staticmethod
@@ -232,6 +241,23 @@ class Model:
             images = tf.cast(images, self.data_type)
         return images
 
+    @staticmethod
+    def get_grads(loss, params, gpu_grad_stage_ops):
+        aggmeth = tf.AggregationMethod.DEFAULT
+        grads = tf.gradients(loss, params, aggregation_method=aggmeth)
+
+        if FLAGS.staged_vars:
+            grad_dtypes = [grad.dtype for grad in grads]
+            grad_shapes = [grad.shape for grad in grads]
+            grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
+            grad_stage_op = grad_stage.put(grads)
+            # In general, this decouples the computation of the gradients and the updates of the weights.
+            # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
+            gpu_grad_stage_ops.append(grad_stage_op)
+            grads = grad_stage.get()
+
+        return grads
+
     def forward_pass(self, images, labels, device_num, context_device, gpu_grad_stage_ops, trainable_variables_on_device):
 
         """Add ops for forward-pass and gradient computations."""
@@ -253,20 +279,20 @@ class Model:
             if weight_decay is not None and weight_decay != 0.:
                 loss += weight_decay * l2_loss
 
-            aggmeth = tf.AggregationMethod.DEFAULT
-            grads = tf.gradients(loss, params, aggregation_method=aggmeth)
+            grads = self.get_grads(loss, params, gpu_grad_stage_ops)
 
-            if FLAGS.staged_vars:
-                grad_dtypes = [grad.dtype for grad in grads]
-                grad_shapes = [grad.shape for grad in grads]
-                grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
-                grad_stage_op = grad_stage.put(grads)
-                # In general, this decouples the computation of the gradients and
-                # the updates of the weights.
-                # During the pipeline warm up, this runs enough training to produce
-                # the first set of gradients.
-                gpu_grad_stage_ops.append(grad_stage_op)
-                grads = grad_stage.get()
+            # aggmeth = tf.AggregationMethod.DEFAULT
+            # grads = tf.gradients(loss, params, aggregation_method=aggmeth)
+            #
+            # if FLAGS.staged_vars:
+            #     grad_dtypes = [grad.dtype for grad in grads]
+            #     grad_shapes = [grad.shape for grad in grads]
+            #     grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
+            #     grad_stage_op = grad_stage.put(grads)
+            #     # In general, this decouples the computation of the gradients and the updates of the weights.
+            #     # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
+            #     gpu_grad_stage_ops.append(grad_stage_op)
+            #     grads = grad_stage.get()
 
             param_refs = trainable_variables_on_device(device_num, writable=True)
             gradvars = list(zip(grads, param_refs))
@@ -279,13 +305,13 @@ class Model:
             PoolLayer('pool_1'),
             Conv2dLayer2(32, 64, 5, 5, 'conv_2'),
             PoolLayer('pool_2'),
-            Conv2dLayer2(64, 64, 5, 5, 'conv_3'),
+            Conv2dLayer2(64, 128, 5, 5, 'conv_3'),
             PoolLayer('pool_3'),
-            ReshapeLayer(output_shape=[-1, 64 * 8 * 8]),
-            AffineLayer('fc_1', 4096, 512),
+            ReshapeLayer(output_shape=[-1, 128 * 8 * 8]),
+            AffineLayer('fc_1', 8192, 512),
             AffineLayer('output', 512, 1001, final_layer=True)
         ]
-        return cls(name='trial', layers=layers)
+        return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=tf.nn.relu)
 
 
 def loss_function(logits, labels):

@@ -44,7 +44,7 @@ class TestDataset(SuperDatasetConfig):
 
     def test_num_classes(self):
         self.assertEqual(self.syntheticDataset.num_classes(), 1000)
-        self.assertEqual(self.imageDataset.num_classes(), 11)
+        self.assertEqual(self.imageDataset.num_classes(), 18)
 
     def test_num_examples_per_epoch(self):
         self.assertRaises(ValueError, self.imageDataset.num_examples_per_epoch, 'train__')

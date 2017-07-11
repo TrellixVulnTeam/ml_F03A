@@ -9,13 +9,23 @@ trainingInput:
   hyperparameters:
     goal: MINIMIZE
     hyperparameterMetricTag: total_loss
-    maxTrials: 9
+    maxTrials: 6
     params:
-    - parameterName: optimizer
-      type: CATEGORICAL
-      categoricalValues: ['sgd', 'momentum', 'rmsprop']
+    - parameterName: batch_size
+      type: INTEGER
+      minValue: 32
+      maxValue: 256
+      scaleType: UNIT_LINEAR_SCALE
     - parameterName: learning_rate
       type: DOUBLE
       minValue: 0.0001
-      maxValue: 0.007
-      scaleType: UNIT_REVERSE_LOG_SCALE
+      maxValue: 0.05
+      scaleType: UNIT_LINEAR_SCALE
+#    - parameterName: num_epochs_per_decay
+#      type: INTEGER
+#      minValue: 5
+#      maxValue: 500
+#      scaleType: UNIT_LINEAR_SCALE
+#    - parameterName: parameter_server
+#      type: CATEGORICAL
+#      categoricalValues: ['parameter_server', 'distributed_replicated']

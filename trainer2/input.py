@@ -150,7 +150,7 @@ def eval_image(image, height, width, bbox, thread_id, resize):
             distorted_image = tf.image.resize_images(distorted_image, [height, width],
                                                      resize_method, align_corners=False)
         distorted_image.set_shape([height, width, 3])
-        if not thread_id and FLAGS.debug_level > 1:
+        if not thread_id and FLAGS.debug_level > 2:
             tf.summary.image('cropped_resized_image', tf.expand_dims(distorted_image, 0))
         image = distorted_image
     return image
@@ -221,7 +221,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             max_attempts=100,
             use_image_if_no_bounding_boxes=True)
         bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
-        if not thread_id and FLAGS.debug_level > 1:
+        if not thread_id and FLAGS.debug_level > 2:
             image_with_distorted_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), distort_bbox)
             tf.summary.image('images_with_distorted_bounding_box', image_with_distorted_box)
 
@@ -237,7 +237,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
         # Restore the shape since the dynamic slice based upon the bbox_size loses
         # the third dimension.
         distorted_image.set_shape([height, width, 3])
-        if not thread_id and FLAGS.debug_level > 2:
+        if not thread_id and FLAGS.debug_level > 3:
             tf.summary.image('cropped_resized_image', tf.expand_dims(distorted_image, 0))
 
         # Randomly flip the image horizontally.
@@ -249,7 +249,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
         # Note: This ensures the scaling matches the output of eval_image
         distorted_image *= 256
 
-        if not thread_id and FLAGS.debug_level > 0:
+        if not thread_id and FLAGS.debug_level > 1:
             tf.summary.image('final_distorted_image', tf.expand_dims(distorted_image, 0))
         return distorted_image
 
@@ -327,8 +327,9 @@ class ImagePreprocessor(object):
 
     def minibatch(self, dataset, subset):
         with tf.name_scope('batch_processing'):
-            images = [[] for i in range(self.device_count)]
-            labels = [[] for i in range(self.device_count)]
+            images = [[] for _ in range(self.device_count)]
+            labels = [[] for _ in range(self.device_count)]
+            # labels = images[:]
             record_input = data_flow_ops.RecordInput(
                 file_pattern=dataset.tf_record_pattern(subset),
                 seed=301,

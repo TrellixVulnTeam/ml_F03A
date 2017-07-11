@@ -31,14 +31,14 @@ class GlobalStepWatcher(threading.Thread):
             time.sleep(.25)
             global_step_val, = self.sess.run([self.global_step_op])
             self._value = global_step_val
+
             if self.start_time == 0 and global_step_val >= self.start_at_global_step:
-                log_fn('Starting real work at step %s at time %s' % (
-                    global_step_val, time.ctime()))
+                log_fn('Starting real work at step {} at time {}'.format(global_step_val, time.ctime()))
                 self.start_time = time.time()
                 self.start_step = global_step_val
+
             if self.finish_time == 0 and global_step_val >= self.end_at_global_step:
-                log_fn('Finishing real work at step %s at time %s' % (
-                    global_step_val, time.ctime()))
+                log_fn('Finishing real work at step {} at time {}'.format(global_step_val, time.ctime()))
                 self.finish_time = time.time()
                 self.finish_step = global_step_val
 

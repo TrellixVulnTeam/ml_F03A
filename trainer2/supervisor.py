@@ -4,7 +4,6 @@
 import os
 
 import tensorflow as tf
-
 from tensorflow.python.platform import gfile
 
 from trainer2 import flags

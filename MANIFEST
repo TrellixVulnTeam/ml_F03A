@@ -9,6 +9,8 @@ tests/__init__.py
 tests/test_config.py
 tests/test_dataset.py
 tests/test_global_Step.py
+tests/test_log_fn.py
+tests/test_manager.py
 tests/test_model.py
 tests/test_supervisor.py
 tests/test_trainer.py

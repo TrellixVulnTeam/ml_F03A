@@ -1,6 +1,6 @@
 #
 # build_data
-# ml
+# ml.data
 #
 
 """
@@ -12,24 +12,18 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import tarfile
 import shutil
 import sys
+import tarfile
 
 import numpy as np
 import tensorflow as tf
 
+from data import image_util
+from data import process_bounding_boxes
+
 if sys.version_info >= (3,):
     from urllib import request as urllib2
-else:
-    import urllib2
-
-try:
-    from data import image_util
-    from data import process_bounding_boxes
-except ImportError:
-    import image_util
-    import process_bounding_boxes
 
 tf.app.flags.DEFINE_string('data_dir', 'raw_data', 'Raw data directory')
 tf.app.flags.DEFINE_string('output_dir', 'data', 'Output data directory')
@@ -48,7 +42,7 @@ tf.app.flags.DEFINE_string('bounding_box_file', 'txt_util/bounding_boxes.csv', '
 FLAGS = tf.app.flags.FLAGS
 
 USER_ID = 'eskil'
-ACCESS_PASS = 'ed5ac67a10f56ba081f6735886b92d39959692e1'
+ACCESS_PASS = os.environ.get('IMAGENET_PASS')
 SYNSET_URL = 'http://www.image-net.org/download/synset?wnid={}&username={}&accesskey={}&release=latest&src=stanford'
 BBOX_URL = 'http://www.image-net.org/downloads/bbox/bbox/{}.tar.gz'
 
@@ -103,6 +97,14 @@ class UnpackInfo(object):
 
 
 def _get_dl_urls(wnid):
+
+    """
+    Returns download url for images and bounding boxes
+    :param str wnid: Wordnet id
+    :return: Synset url and bbox url for the given wordnet id.
+    """
+    assert isinstance(ACCESS_PASS, str), 'Imagenet Access pass must be provided.'
+
     synset_url = SYNSET_URL.format(wnid, USER_ID, ACCESS_PASS)
     bbox_url = BBOX_URL.format(wnid)
     return [synset_url, bbox_url]
@@ -179,6 +181,7 @@ def _unpack_data(data_dir, output_dir):
         with tarfile.open(file) as tar:
             path = '{}/{}/'.format(output_dir, filename)
             names = np.array(tar.getnames(), dtype=str)
+            # noinspection PyTypeChecker
             file_prefix = np.full_like(names, fill_value=path)
             names = np.core.defchararray.add(file_prefix, names)
             tar.extractall(path=path)

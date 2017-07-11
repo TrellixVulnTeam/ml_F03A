@@ -38,6 +38,7 @@ class TestModel(SuperTestModel):
         pass
 
     def test_get_optimizer(self):
+        self.assertRaises(AssertionError, self.model.get_optimizer, 'incorrect_optimizer_string')
         self.assertIsInstance(self.model.get_optimizer('sgd'), tf.train.GradientDescentOptimizer)
 
     def test_reformat_images(self):

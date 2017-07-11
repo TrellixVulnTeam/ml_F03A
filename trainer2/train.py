@@ -5,6 +5,7 @@ import time
 import numpy as np
 import tensorflow as tf
 
+from trainer2 import config
 from trainer2 import datasets
 from trainer2 import flags
 from trainer2 import manager
@@ -12,7 +13,6 @@ from trainer2 import util
 from trainer2.global_step import GlobalStepWatcher
 from trainer2.model import Model
 from trainer2.supervisor import Supervisor
-
 
 FLAGS = flags.get_flags()
 WORKER_ARRAY = ['worker', 'master']
@@ -43,7 +43,10 @@ class Trainer(object):
         """Run trainer."""
         if self.config.job_name in ['master', 'worker', '']:
             with tf.Graph().as_default():
-                self.train()
+                if self.model.run_training:
+                    self.train()
+                else:
+                    self._eval_cnn()
 
     def log(self, string, debug_level=1):
         if FLAGS.debug_level > 3:
@@ -153,6 +156,48 @@ class Trainer(object):
                 sess.run([execution_barrier])
         self.supervisor.stop()
 
+    def _eval_cnn(self):
+        """Evaluate the model from a checkpoint using validation dataset."""
+        (enqueue_ops, fetches) = self.model.build_graph(self.config, self.manager)
+        saver = tf.train.Saver(tf.global_variables())
+        summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, tf.get_default_graph())
+        target = ''
+
+        util.log_fn('RUNNING EVAL')
+
+        with tf.Session(target=target, config=config.create_config_proto()) as sess:
+            for i in range(len(enqueue_ops)):
+                sess.run(enqueue_ops[:(i + 1)])
+
+            util.log_fn('RUNNING EVAL 2')
+
+            if FLAGS.train_dir is None:
+                raise ValueError('Trained model directory not specified')
+
+            global_step = load_checkpoint(saver, sess, FLAGS.train_dir)
+
+            start_time = time.time()
+            count_top_1 = 0.0
+            count_top_5 = 0.0
+            total_eval_count = self.num_batches * self.batch_size
+            for step in range(self.num_batches):
+                results = sess.run(fetches)
+                count_top_1 += results[0]
+                count_top_5 += results[1]
+                if (step + 1) % FLAGS.display_every == 0:
+                    duration = time.time() - start_time
+                    ex_per_sec = self.batch_size * self.num_batches / duration
+                    util.log_fn('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
+                    start_time = time.time()
+            precision_at_1 = count_top_1 / total_eval_count
+            recall_at_5 = count_top_5 / total_eval_count
+            summary = tf.Summary()
+            summary.value.add(tag='eval/Accuracy@1', simple_value=precision_at_1)
+            summary.value.add(tag='eval/Recall@5', simple_value=recall_at_5)
+            summary_writer.add_summary(summary, global_step)
+            util.log_fn('Precision @ 1 = %.4f recall @ 5 = %.4f [%d examples]' %
+                        (precision_at_1, recall_at_5, total_eval_count))
+
     def print_info(self):
         """Print basic information."""
         self.log('Task:       %s' % self.config.job_name)
@@ -227,3 +272,21 @@ def get_perf_timing_str(batch_size, step_train_times, scale=1):
         return 'images/sec: {:.1f} +/- {:.1f} (jitter = {:.1f})'.format(speed_mean, speed_uncertainty, speed_jitter)
     else:
         return 'images/sec: {:.1f}'.format(speed_mean)
+
+
+def load_checkpoint(saver, sess, ckpt_dir):
+    ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+    if ckpt and ckpt.model_checkpoint_path:
+        # Assuming model_checkpoint_path looks something like:
+        #   /my-favorite-path/imagenet_train/model.ckpt-0,
+        # extract global_step from it.
+        global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
+        if not global_step.isdigit():
+            global_step = 0
+        else:
+            global_step = int(global_step)
+        saver.restore(sess, ckpt.model_checkpoint_path)
+        util.log_fn('Successfully loaded model from %s.' % ckpt.model_checkpoint_path)
+        return global_step
+    else:
+        raise RuntimeError('No checkpoint file found.')

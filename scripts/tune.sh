@@ -23,9 +23,8 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --config ./config/hyperparam.yaml \
 -- \
 --data_dir "${DATA_PATH}/data/train" \
---train_dir "${BUCKET}/summary/${JOB_NAME}" \
---trace_file "${BUCKET}/summary/trace/trace.json" \
---graph_file "${BUCKET}/summary/${JOB_NAME}/graph.txt" \
+--train_dir "${BUCKET}/tune/${JOB_NAME}" \
+--num_batches 2000 \
 
 # Create model
 # gcloud ml-engine models create $MODEL_NAME

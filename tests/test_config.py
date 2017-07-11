@@ -34,6 +34,21 @@ SAMLPLE_TF_CONFIG = {
     }
 }
 
+BASIC_CLOUD_CONFIG = {
+    'cluster': {
+        'master': [
+            'master-e0ca1f7b4d-0:2222'
+        ]
+    },
+    'task': {
+        'type': 'master',
+        'index': 0
+    },
+    'job': {
+        'region': 'us-central1'
+    }
+}
+
 
 class SuperTestConfig(TestCase):
     def setUp(self):

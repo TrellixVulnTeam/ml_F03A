@@ -28,8 +28,8 @@ class Dataset(object):
         if isinstance(self, (ImgData, ImagenetData)):
             assert data_dir is not None, 'Invalid data_dir type, in Dataset constructor.'
             assert isinstance(data_dir, str), 'data_dir path must be a string.'
-            if 'gs://' in data_dir:
-                assert os.path.isdir(data_dir)
+            # if 'gs://' in data_dir:
+            #     assert os.path.isdir(data_dir)
             # try:
             #
             # except AssertionError:
@@ -70,13 +70,13 @@ class ImgData(Dataset):
         super(ImgData, self).__init__('custom-data', data_dir=data_dir, image_size=64)
 
     def num_classes(self):
-        return 11
+        return 18
 
     def num_examples_per_epoch(self, subset='train'):
         if subset == 'train':
-            return 13812
+            return 22029
         elif subset == 'validation':
-            return 1540
+            return 2458
         else:
             raise ValueError('Invalid data subset "%s"' % subset)
 
