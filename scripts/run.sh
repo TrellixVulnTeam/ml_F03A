@@ -21,8 +21,9 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --region us-east1 \
 -- \
 --data_dir "${DATA_PATH}/train" \
---train_dir "${BUCKET}/result/dr/gpu=4,mom" \
---optimizer momentum \
---manager_type dr \
---batch_size 32 \
---num_batches 1000 \
+--train_dir "${BUCKET}/test/ps/gpu=4,adam,bs=64,lr=0.001" \
+--optimizer adam \
+--manager_type ps \
+--learning_rate 0.001 \
+--batch_size 64 \
+--num_batches 500 \

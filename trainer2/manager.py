@@ -132,6 +132,7 @@ class VariableMgr(object):
         self.config = trainer_config
         self.staging_delta_ops = []
         self.devices = self.get_devices()
+        self.sync_queue_counter = 0
 
     def each_tower_has_variables(self):
         """Returns True if each GPU tower of the model has separate variables."""
@@ -209,6 +210,47 @@ class VariableMgr(object):
             params = tf.trainable_variables()
         return params
 
+    def create_sync_queue(self, name_prefix, enqueue_after):
+        """
+        Adds ops to enqueue on all worker queues.
+        :param str name_prefix: prefixed for the shared_name of ops.
+        :param list enqueue_after: control dependency from ops.
+        :return: an op that should be used as control dependency before starting next step.
+        """
+        assert isinstance(self.config.cluster, tf.train.ClusterSpec), 'The needed clusterSpec is not provided.'
+        assert self.config.job_name != '', 'Illegal job name/type for synch queues and barriers.'
+
+        self.sync_queue_counter += 1
+        # Handle case where master is only worker
+        num_workers = self.config.cluster.num_tasks('worker') + 1
+        # try:
+        #     num_workers = self.cluster.num_tasks('worker') + 1
+        # except ValueError:
+        #     num_workers = 1
+
+        with tf.device(self.config.sync_queue_devices[self.sync_queue_counter % len(self.config.sync_queue_devices)]):
+            sync_queues = [
+                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
+                for i in range(num_workers)]
+            queue_ops = []
+
+            # For each other worker, add an entry in a queue, signaling that it can finish this step.
+            token = tf.constant(False)
+            with tf.control_dependencies(enqueue_after):
+                for i, q in enumerate(sync_queues):
+                    if self.config.job_name == 'master' and i == 0:
+                        queue_ops.append(tf.no_op())
+                    elif self.config.job_name == 'worker' and i == self.config.task_index + 1:
+                        queue_ops.append(tf.no_op())
+                    else:
+                        queue_ops.append(q.enqueue(token))
+
+            # Drain tokens off queue for this worker, one for each other worker.
+            temp_index = self.config.task_index if self.config.job_name == 'master' else self.config.task_index + 1
+            queue_ops.append(sync_queues[temp_index].dequeue_many(len(sync_queues) - 1))
+
+        return tf.group(*queue_ops)
+
     def __repr__(self):
         return '{self.__class__.__name__}'.format(self=self)
 
@@ -243,6 +285,9 @@ class LocalManager(VariableMgr):
             return [tf.train.replica_device_setter(
                 worker_device=d, ps_device=self.config.ps_device,
                 ps_tasks=1) for d in op_devices]
+
+    def create_sync_queue(self, name_prefix, enqueue_after):
+        assert False, 'create_sync_queue should not be used in local execution mode.'
 
 
 class PSManager(VariableMgr):
@@ -321,8 +366,7 @@ class DRManager(VariableMgr):
         # this.
         for i, (g, v) in enumerate(grads):
             apply_gradient_op = opt.apply_gradients([(g, v)])
-            barrier = self.config.create_sync_queue(
-                'replicate_variable_%s' % i, [apply_gradient_op])
+            barrier = self.create_sync_queue('replicate_variable_{}'.format(i), [apply_gradient_op])
             with tf.control_dependencies([barrier]):
                 with tf.device(self.config.cpu_device):
                     updated_value = v.read_value()

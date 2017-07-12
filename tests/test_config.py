@@ -74,16 +74,16 @@ class TestConfig(SuperTestConfig):
         # invalid job name
         self.assertRaises(AssertionError, config.Config, 'name', 2, False)
 
-    def test_create_sync_queue(self):
-
-        # Illegal arguments
-        self.assertRaises(TypeError, self.config.create_sync_queue)
-
-        # Illegal Job Name
-        self.assertRaises(AssertionError, self.config.create_sync_queue, 'prefix', [])
-
-        self.config.job_name = 'master'
-        self.assertRaises(AssertionError, self.config.create_sync_queue, 'prefix', [])
+    # def test_create_sync_queue(self):
+    #
+    #     # Illegal arguments
+    #     self.assertRaises(TypeError, self.config.create_sync_queue)
+    #
+    #     # Illegal Job Name
+    #     self.assertRaises(AssertionError, self.config.create_sync_queue, 'prefix', [])
+    #
+    #     self.config.job_name = 'master'
+    #     self.assertRaises(AssertionError, self.config.create_sync_queue, 'prefix', [])
 
     def test_local_config(self):
         self.assertEqual(self.config.job_name, config.Config.local_config().job_name)

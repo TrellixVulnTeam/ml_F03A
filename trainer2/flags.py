@@ -10,25 +10,20 @@ tf.flags.DEFINE_boolean(
 
 tf.flags.DEFINE_integer(
     'debug_level', 1,
-    'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
+    'Level of logging and summary output. [0 => 5]. 0 For minimum output, 5 for max.')
 
 ################
 # DIRECTORIES. #
 ################
 
 tf.flags.DEFINE_string(
-    'data_dir', '../data/data/train',
-    # 'data_dir', None,
-    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
-)
+    'data_dir', None,
+    # 'data_dir', '../data/data/train',
+    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.')
 
-tf.flags.DEFINE_string(
-    'train_dir', 'train_data',
-    'Path to session checkpoints.')
+tf.flags.DEFINE_string('train_dir', 'train_data', 'Path to session checkpoints.')
 
-tf.flags.DEFINE_string(
-    'eval_dir', 'eval',
-    'Directory where to write eval event logs.')
+tf.flags.DEFINE_string('eval_dir', 'eval', 'Directory where to write eval event logs.')
 
 tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
 # TUTORIAL: https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
@@ -45,18 +40,19 @@ tf.flags.DEFINE_string(
 
 tf.flags.DEFINE_integer(
     'batch_size', 64,
-    'batch size per compute device'
-)
+    'batch size per compute device')
 
 tf.flags.DEFINE_integer(
-    'num_batches', 10000,
-    'Number of batches (per worker) to run.'
-)
+    'num_batches', 8000,
+    'Number of batches (per worker) to run.')
 
 tf.flags.DEFINE_integer(
     'num_warmup_batches', None,
-    'number of batches to run before timing'
-)
+    'number of batches to run before timing')
+
+tf.flags.DEFINE_integer(
+    'autotune_threshold', None,
+    'The autotune threshold for the models')
 
 #############
 # DEVICES   #
@@ -76,52 +72,57 @@ tf.flags.DEFINE_string(
 # TRAINING CONFIG
 #############
 
-tf.flags.DEFINE_string(
-    'optimizer', 'momentum',
-    'Optimizer to use: momentum, adam, sgd or rmsprop'
-)
-
 tf.flags.DEFINE_float(
     'learning_rate', 0.0055,
-    'Initial learning rate for training.'
-)
+    'Initial learning rate for training.')
+
+tf.flags.DEFINE_string(
+    'optimizer', 'momentum',
+    'Optimizer to use: momentum, adam, sgd or rmsprop')
 
 tf.flags.DEFINE_float(
     'num_epochs_per_decay', 0,
-    'Steps after which learning rate decays.'
-)
+    'Number of epochs per learning rate decay (using staircase version)')
 
 tf.flags.DEFINE_float(
     'learning_rate_decay_factor', 0.98999,
-    'Learning rate decay factor.'
-)
+    'The exponential learning rate decay factor.')
 
 tf.flags.DEFINE_float(
     'momentum', 0.9,
-    'Momentum for training.'
-)
+    'Momentum coefficient for training (with momentum or rmsprop).')
 
 tf.flags.DEFINE_float(
     'rmsprop_decay', 0.9,
-    'Decay term for RMSProp.'
-)
+    'Decay term for RMSProp.')
 
 tf.flags.DEFINE_float(
     'gradient_clip', None,
-    'Gradient clipping magnitude. Disabled by default.'
-)
+    'Gradient clipping magnitude. Disabled by default.')
 
 tf.flags.DEFINE_float(
     'weight_decay', 0.00004,
-    'Weight decay factor for training.'
-)
+    'Weight decay factor for training.')
+
+#############
+# OUTPUT / SUMMARIES
+#############
 
 tf.flags.DEFINE_integer(
-    'autotune_threshold', None,
-    'The autotune threshold for the models'
-)
+    'display_every', 100,
+    'Number of local steps after which progress is printed out')
 
-tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which progress is printed out')
+tf.flags.DEFINE_bool(
+    'write_summary', True,
+    'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.')
+
+tf.flags.DEFINE_integer(
+    'save_summaries_steps', 50,
+    'How often to save summaries for trained models. Pass 0 to disable summaries.')
+
+tf.flags.DEFINE_integer(
+    'save_model_secs', 600,
+    'How often to save trained models. Pass 0 to disable checkpoints')
 
 #############
 # TRAINING DATA
@@ -143,20 +144,6 @@ tf.flags.DEFINE_boolean(
     'distortions', True,
     'Enable/disable distortions during image preprocessing. These  include bbox and color distortions.')
 
-# OUTPUT: Summary and Save & load checkpoints.
-
-tf.flags.DEFINE_bool(
-    'write_summary', True,
-    'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.'
-)
-
-tf.flags.DEFINE_integer(
-    'save_summaries_steps', 50,
-    'How often to save summaries for trained models. Pass 0 to disable summaries.'
-)
-
-tf.flags.DEFINE_integer('save_model_secs', 600, 'How often to save trained models. Pass 0 to disable checkpoints')
-
 # Performance tuning flags.
 
 tf.flags.DEFINE_boolean('winograd_nonfused', True, 'Enable/disable using the Winograd non-fused algorithms.')
@@ -173,8 +160,7 @@ tf.flags.DEFINE_boolean('sync_on_finish', False, 'Enable/disable whether the dev
 #   distributed_replicated: Distributed training only. Each GPU has a copy of
 #       the variables, and updates its copy after the parameter servers are all
 #       updated with the gradients from all servers. Only works with
-#       cross_replica_sync=true. Unlike 'replicated', currently never uses
-#       nccl all-reduce for replicating within a server.
+#       cross_replica_sync=true.
 tf.flags.DEFINE_string(
     'manager_type', 'ps',
     'The method for managing variables: ps, local or dr'

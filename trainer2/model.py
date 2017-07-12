@@ -53,13 +53,6 @@ class Model:
 
         return next_inputs
 
-    # def get_l2_losses(self):
-    #     weights = []
-    #     for layer in self.layers:
-    #         if isinstance(layer, (Conv2dLayer2, AffineLayer)):
-    #             weights.append(tf.nn.l2_loss(layer.weights))
-    #     return self.l2_loss * sum(weights)
-
     def build_graph(self, config, manager):
 
         tf.set_random_seed(1234)
@@ -67,7 +60,6 @@ class Model:
 
         enqueue_ops = []
         losses = []
-        accuracies = []
         device_grads = []
         all_logits = []
         all_top_1_ops = []
@@ -105,7 +97,7 @@ class Model:
 
                 if self.run_training:
                     losses.append(results[0])
-                    device_grads.append(results[1])
+                    device_grads.append(results[2])
                 else:
                     all_logits.append(results[0])
                     all_top_1_ops.append(results[1])
@@ -153,9 +145,9 @@ class Model:
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
-                    self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
-                                                                    decay_steps, FLAGS.learning_rate_decay_factor,
-                                                                    staircase=True)
+                    # self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                    #                                                 decay_steps, FLAGS.learning_rate_decay_factor,
+                    #                                                 staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [(tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
@@ -264,7 +256,6 @@ class Model:
 
             # Calculate loss
             loss = loss_function(logits, labels)
-            # acc = tf.reduce_sum(tf.cast(tf.nn.in_top_k(logits, labels, 1), tf.float32), name='acc')
             params = trainable_variables_on_device(device_num)
 
             # Calculate L2 loss and appy weight decay factor:
@@ -281,7 +272,8 @@ class Model:
 
     @classmethod
     def trial(cls):
-        layers = [
+
+        layers_img = [
             Conv2dLayer2(3, 32, 5, 5, 'conv_1'),
             PoolLayer('pool_1'),
             Conv2dLayer2(32, 64, 5, 5, 'conv_2'),
@@ -292,11 +284,21 @@ class Model:
             AffineLayer('fc_1', 8192, 512),
             AffineLayer('output', 512, 21, final_layer=True)
         ]
+
+        layers_syn = [
+            Conv2dLayer2(3, 16, 5, 5, 'conv_1'),
+            PoolLayer('pool_1'),
+            Conv2dLayer2(32, 16, 5, 5, 'conv_2'),
+            PoolLayer('pool_2'),
+            ReshapeLayer(output_shape=[-1, 16 * 8 * 8]),
+            AffineLayer('fc_1', 1024, 512),
+            AffineLayer('output', 512, 1001, final_layer=True)
+        ]
+        layers = layers_img if FLAGS.data_dir is not None else layers_syn
         return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=tf.nn.relu)
 
 
 def loss_function(logits, labels):
-    # global cross_entropy # HACK TESTING
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='cross_entropy')
     loss = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
     return loss

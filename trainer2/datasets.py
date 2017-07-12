@@ -11,7 +11,7 @@ FLAGS = flags.get_flags()
 class DatasetFactory(object):
     @staticmethod
     def create_dataset(data_dir):
-        if data_dir:
+        if data_dir is not None:
             return ImgData(data_dir=data_dir)
         else:
             return SyntheticData()

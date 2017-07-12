@@ -63,7 +63,7 @@ class Trainer(object):
         # Create the execution barrier if not in cross replica mode
         execution_barrier = None
         if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
-            execution_barrier = self.config.create_sync_queue('execution_barrier_', [])
+            execution_barrier = self.manager.create_sync_queue('execution_barrier_', [])
 
         # Initiate global step, and ensure [main_fetch_group] is executed before inc_global_step
         # and fetches.append()
@@ -76,7 +76,8 @@ class Trainer(object):
         # If training in cross replica sync mode: Create barrier to block all replicas until
         # all replicas are ready for next step.
         if self.config.job_name in WORKER_ARRAY and FLAGS.cross_replica_sync:
-            fetches.append(self.config.create_sync_queue('sync_queues_step_end_', [main_fetch_group]))
+            replica_sync_queue = self.manager.create_sync_queue('sync_queues_step_end_', [main_fetch_group])
+            fetches.append(replica_sync_queue)
 
         # Get ops from manager to execute after variables are initiated. NOTE: The ops are grouped in
         # the get_post_init_ops()-return statement (instead of here).

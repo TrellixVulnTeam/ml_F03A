@@ -75,39 +75,7 @@ class Config(object):
         :param list enqueue_after: control dependency from ops.
         :return: an op that should be used as control dependency before starting next step.
         """
-        assert isinstance(self.cluster, tf.train.ClusterSpec), 'The needed clusterSpec is not provided.'
-        assert self.job_name != '', 'Illegal job name/type for synch queues and barriers.'
-
-        self.sync_queue_counter += 1
-        # Handle case where master is only worker
-        num_workers = self.cluster.num_tasks('worker') + 1
-        # try:
-        #     num_workers = self.cluster.num_tasks('worker') + 1
-        # except ValueError:
-        #     num_workers = 1
-
-        with tf.device(self.sync_queue_devices[self.sync_queue_counter % len(self.sync_queue_devices)]):
-            sync_queues = [
-                tf.FIFOQueue(num_workers, [tf.bool], shapes=[[]], shared_name='%s%s' % (name_prefix, i))
-                for i in range(num_workers)]
-            queue_ops = []
-
-            # For each other worker, add an entry in a queue, signaling that it can finish this step.
-            token = tf.constant(False)
-            with tf.control_dependencies(enqueue_after):
-                for i, q in enumerate(sync_queues):
-                    if self.job_name == 'master' and i == 0:
-                        queue_ops.append(tf.no_op())
-                    elif self.job_name == 'worker' and i == self.task_index + 1:
-                        queue_ops.append(tf.no_op())
-                    else:
-                        queue_ops.append(q.enqueue(token))
-
-            # Drain tokens off queue for this worker, one for each other worker.
-            temp_index = self.task_index if self.job_name == 'master' else self.task_index + 1
-            queue_ops.append(sync_queues[temp_index].dequeue_many(len(sync_queues) - 1))
-
-        return tf.group(*queue_ops)
+        raise AssertionError('Call new queue method in manager class.')
 
     @classmethod
     def local_config(cls):
@@ -200,7 +168,6 @@ def config_factory():
     sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i for i in range(len(ps_tasks))]
 
     # Is current task Session chief:
-    # is_chief = job_name == 'worker' and task_index == 0
     is_chief = job_name == 'master'
 
     return Config(job_name, task_index, is_chief, ps_tasks, worker_tasks, cluster, server, worker_prefix, ps_device,
