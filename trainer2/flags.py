@@ -12,6 +12,33 @@ tf.flags.DEFINE_integer(
     'debug_level', 1,
     'Level of string logging and summary output. [0, 1, ... 5]. 0 For minimum output, 5 for ma')
 
+################
+# DIRECTORIES. #
+################
+
+tf.flags.DEFINE_string(
+    'data_dir', '../data/data/train',
+    # 'data_dir', None,
+    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
+)
+
+tf.flags.DEFINE_string(
+    'train_dir', 'train_data',
+    'Path to session checkpoints.')
+
+tf.flags.DEFINE_string(
+    'eval_dir', 'eval',
+    'Directory where to write eval event logs.')
+
+tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
+# TUTORIAL: https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
+tf.flags.DEFINE_string('trace_file', None, 'Enable TensorFlow tracing and write trace to this file.')
+
+tf.flags.DEFINE_string(
+    'graph_file', None,
+    'Write the model\'s graph definition to this file. Defaults to binary format unless filename ends in txt.')
+
+
 #############
 # BATCH     #
 #############
@@ -100,12 +127,6 @@ tf.flags.DEFINE_integer('display_every', 100, 'Number of local steps after which
 # TRAINING DATA
 #############
 
-tf.flags.DEFINE_string(
-    # 'data_dir', '../data/data/train_local',
-    'data_dir', None,
-    'Path to dataset in TFRecord format. If not specified, synthetic data will be used.'
-)
-
 tf.flags.DEFINE_string('data_format', 'NHWC', 'Data layout to use: NHWC (TF native) or NCHW (cuDNN native).')
 
 # PREPROCESSING
@@ -134,23 +155,7 @@ tf.flags.DEFINE_integer(
     'How often to save summaries for trained models. Pass 0 to disable summaries.'
 )
 
-tf.flags.DEFINE_integer('save_model_secs', 0, 'How often to save trained models. Pass 0 to disable checkpoints')
-
-tf.flags.DEFINE_string(
-    'train_dir', 'train_data',
-    'Path to session checkpoints.'
-)
-
-tf.flags.DEFINE_string('eval_dir', 'train_eval', 'Directory where to write eval event logs.')
-
-tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
-
-# TUTORIAL: https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
-tf.flags.DEFINE_string('trace_file', None, 'Enable TensorFlow tracing and write trace to this file.')
-
-tf.flags.DEFINE_string(
-    'graph_file', None,
-    'Write the model\'s graph definition to this file. Defaults to binary format unless filename ends in txt.')
+tf.flags.DEFINE_integer('save_model_secs', 600, 'How often to save trained models. Pass 0 to disable checkpoints')
 
 # Performance tuning flags.
 

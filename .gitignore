@@ -97,10 +97,14 @@ ENV/
 
 # Ignore TF record Files
 *.tfrecord
+*.tfevents.*
+*.ckpt*
+*.pbtxt
 
 /.idea/
 /.editorconfig
 /trainer2/train_data/
+/trainer2/train_dir/
 /data/img_data/
 /data/raw_data/
 /data/Annotation/

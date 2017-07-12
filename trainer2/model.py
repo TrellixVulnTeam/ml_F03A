@@ -26,6 +26,7 @@ class Model:
         assert initial_lr > 0.0
         assert len(layers) > 0
         assert name is not None
+        assert isinstance(layers[-1], AffineLayer)
 
         self.name = name
         self.layers = layers
@@ -36,8 +37,9 @@ class Model:
         self.activation = activation
         self.data_type = tf.float32
         self.data_format = data_format
-        # self.input_data_type = tf.float32
         self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
+
+        assert layers[-1].num_channels_out == self.dataset.num_classes() + 1
 
     def get_layers(self, inputs):
 
@@ -65,6 +67,7 @@ class Model:
 
         enqueue_ops = []
         losses = []
+        accuracies = []
         device_grads = []
         all_logits = []
         all_top_1_ops = []
@@ -84,20 +87,20 @@ class Model:
         update_ops = None
         staging_delta_ops = []
 
-        for dev in range(len(manager.devices)):
+        for i, device in enumerate(manager.devices):
 
-            with manager.create_outer_variable_scope(dev), tf.name_scope('tower_%i' % dev) as name_scope:
+            with manager.create_outer_variable_scope(i), tf.name_scope('tower_{}'.format(i)) as name_scope:
 
                 if self.dataset.synthetic:
-                    images = tf.truncated_normal(images_splits[dev].get_shape(), dtype=self.data_type, stddev=1e-1,
+                    images = tf.truncated_normal(images_splits[i].get_shape(), dtype=self.data_type, stddev=1e-1,
                                                  name='synthetic_images')
                     images = tf.contrib.framework.local_variable(images, name='gpu_cached_images')
-                    labels = labels_splits[dev]
+                    labels = labels_splits[i]
                 else:
-                    images, labels = self.cpu_gpu_copy(config.cpu_device, config.op_devices[dev], images_splits[dev],
-                                                       labels_splits[dev], gpu_copy_stage_ops, gpu_compute_stage_ops)
+                    images, labels = self.cpu_gpu_copy(config.cpu_device, config.op_devices[i], images_splits[i],
+                                                       labels_splits[i], gpu_copy_stage_ops, gpu_compute_stage_ops)
 
-                results = self.forward_pass(images, labels, dev, manager.devices[dev], gpu_compute_stage_ops,
+                results = self.forward_pass(images, labels, i, device, gpu_compute_stage_ops,
                                             manager.trainable_variables_on_device)
 
                 if self.run_training:
@@ -108,7 +111,7 @@ class Model:
                     all_top_1_ops.append(results[1])
                     all_top_5_ops.append(results[2])
 
-                if manager.retain_tower_updates(dev):
+                if manager.retain_tower_updates(i):
                     # Retain the Batch Normalization updates operations only from the
                     # first tower. Ideally, we should grab the updates from all towers but
                     # these stats accumulate extremely fast so we can ignore the other
@@ -140,6 +143,7 @@ class Model:
         for d, device in enumerate(apply_gradient_devices):
             with tf.device(device):
                 total_loss = tf.reduce_mean(losses)
+                # total_acc = tf.reduce_sum(accuracies)
                 avg_grads = manager.get_gradients_to_apply(d, gradient_state)
 
                 gradient_clip = FLAGS.gradient_clip
@@ -149,9 +153,9 @@ class Model:
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
-                    # self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
-                    #                                                 decay_steps, FLAGS.learning_rate_decay_factor,
-                    #                                                 staircase=True)
+                    self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                                                                    decay_steps, FLAGS.learning_rate_decay_factor,
+                                                                    staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [(tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
@@ -198,7 +202,7 @@ class Model:
         elif optimizer_flag == 'sgd':
             return tf.train.GradientDescentOptimizer(self.learning_rate)
         elif optimizer_flag == 'adam':
-            return tf.train.AdamOptimizer(self.learning_rate, epsilon=1.0)
+            return tf.train.AdamOptimizer(self.learning_rate, epsilon=0.1)
         else:
             return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.momentum)
 
@@ -240,16 +244,7 @@ class Model:
         aggmeth = tf.AggregationMethod.DEFAULT
         grads = tf.gradients(loss, params, aggregation_method=aggmeth)
 
-        # if FLAGS.staged_vars:
-        #     grad_dtypes = [grad.dtype for grad in grads]
-        #     grad_shapes = [grad.shape for grad in grads]
-        #     grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
-        #     grad_stage_op = grad_stage.put(grads)
-        #     # In general, this decouples the computation of the gradients and the updates of the weights.
-        #     # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
-        #     gpu_grad_stage_ops.append(grad_stage_op)
-        #     grads = grad_stage.get()
-
+        # Add staging ops here if needed
         return grads
 
     def forward_pass(self, images, labels, device_num, context_device, gpu_grad_stage_ops,
@@ -261,33 +256,24 @@ class Model:
             images = self.reformat_images(images)
             logits = self.get_layers(images)
 
+            # If running eval, return top_1 and top_5 ops:
             if not self.run_training:
                 top_1_op = tf.reduce_sum(tf.cast(tf.nn.in_top_k(logits, labels, 1), self.data_type))
                 top_5_op = tf.reduce_sum(tf.cast(tf.nn.in_top_k(logits, labels, 5), self.data_type))
                 return logits, top_1_op, top_5_op
 
+            # Calculate loss
             loss = loss_function(logits, labels)
+            # acc = tf.reduce_sum(tf.cast(tf.nn.in_top_k(logits, labels, 1), tf.float32), name='acc')
             params = trainable_variables_on_device(device_num)
 
+            # Calculate L2 loss and appy weight decay factor:
             l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in params])
             weight_decay = FLAGS.weight_decay
-            if weight_decay is not None and weight_decay != 0.:
+            if weight_decay is not None and weight_decay > 0:
                 loss += weight_decay * l2_loss
 
             grads = self.get_grads(loss, params, gpu_grad_stage_ops)
-
-            # aggmeth = tf.AggregationMethod.DEFAULT
-            # grads = tf.gradients(loss, params, aggregation_method=aggmeth)
-            #
-            # if FLAGS.staged_vars:
-            #     grad_dtypes = [grad.dtype for grad in grads]
-            #     grad_shapes = [grad.shape for grad in grads]
-            #     grad_stage = df_ops.StagingArea(grad_dtypes, grad_shapes)
-            #     grad_stage_op = grad_stage.put(grads)
-            #     # In general, this decouples the computation of the gradients and the updates of the weights.
-            #     # During the pipeline warm up, this runs enough training to produce  the first set of gradients.
-            #     gpu_grad_stage_ops.append(grad_stage_op)
-            #     grads = grad_stage.get()
 
             param_refs = trainable_variables_on_device(device_num, writable=True)
             gradvars = list(zip(grads, param_refs))
@@ -304,7 +290,7 @@ class Model:
             PoolLayer('pool_3'),
             ReshapeLayer(output_shape=[-1, 128 * 8 * 8]),
             AffineLayer('fc_1', 8192, 512),
-            AffineLayer('output', 512, 1001, final_layer=True)
+            AffineLayer('output', 512, 21, final_layer=True)
         ]
         return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=tf.nn.relu)
 
@@ -314,3 +300,11 @@ def loss_function(logits, labels):
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='cross_entropy')
     loss = tf.reduce_mean(cross_entropy, name='cross_entropy_mean')
     return loss
+
+
+# def acc_function(logits, labels):
+#     # correct_prediction = tf.equal(tf.argmax(input=logits, axis=1), tf.argmax(input=labels, axis=1))
+#     # acc = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+#     acc = tf.reduce_sum(tf.cast(tf.nn.in_top_k(logits, labels, 1), tf.float32), name='acc')
+#     # accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1)), tf.float32), name='acc')
+#     return acc

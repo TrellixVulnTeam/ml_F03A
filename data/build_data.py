@@ -11,6 +11,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import csv
 import os
 import shutil
 import sys
@@ -27,9 +28,9 @@ if sys.version_info >= (3,):
 
 tf.app.flags.DEFINE_string('data_dir', 'raw_data', 'Raw data directory')
 tf.app.flags.DEFINE_string('output_dir', 'data', 'Output data directory')
-tf.app.flags.DEFINE_string('download_list', 'txt_util/sets_to_download.txt', 'Image-net synsets to download and use')
+tf.app.flags.DEFINE_string('download_list', 'txt_util/list.csv', 'Image-net synsets to download and use')
 
-tf.app.flags.DEFINE_integer('train_shards', 50, 'Number of shards in training TFRecord files.')
+tf.app.flags.DEFINE_integer('train_shards', 90, 'Number of shards in training TFRecord files.')
 tf.app.flags.DEFINE_integer('validation_shards', 10, 'Number of shards in validation TFRecord files.')
 
 tf.app.flags.DEFINE_integer('num_threads', 2, 'Number of threads to preprocess the images.')
@@ -110,24 +111,42 @@ def _get_dl_urls(wnid):
     return [synset_url, bbox_url]
 
 
-def _maybe_download_and_extract(download_list):
+def _maybe_download(download_list):
     """Download Image-net synsets from file"""
     dest_directory = FLAGS.data_dir
     if not os.path.exists(dest_directory):
         os.makedirs(dest_directory)
 
-    wnids = tf.gfile.FastGFile(download_list, 'r').readlines()
-    wnids = [x.strip() for x in wnids]
-    for wordnet_ID in wnids:
+    with open(download_list) as csvfile:
+        list_reader = csv.reader(csvfile)
+        for row in list_reader:
 
-        urls = _get_dl_urls(wordnet_ID)
-        filenames = ['{}.tar'.format(wordnet_ID), '{}.tar.gz'.format(wordnet_ID)]
+            wordnet_id = row[0]
+            print(wordnet_id)
+            urls = _get_dl_urls(wordnet_id)
+            filenames = ['{}.tar'.format(wordnet_id), '{}.tar.gz'.format(wordnet_id)]
 
-        for i, filename in enumerate(filenames):
-            filepath = os.path.join(dest_directory, filename)
+            for i, filename in enumerate(filenames):
+                filepath = os.path.join(dest_directory, filename)
 
-            if not os.path.exists(filepath):
-                download_file(urls[i], filepath)
+                if not os.path.exists(filepath):
+                    download_file(urls[i], filepath)
+
+                if row[2] == '0':
+                    break
+
+    # wnids = tf.gfile.FastGFile(download_list, 'r').readlines()
+    # wnids = [x.strip() for x in wnids]
+    # for wordnet_ID in wnids:
+    #
+    #     urls = _get_dl_urls(wordnet_ID)
+    #     filenames = ['{}.tar'.format(wordnet_ID), '{}.tar.gz'.format(wordnet_ID)]
+    #
+    #     for i, filename in enumerate(filenames):
+    #         filepath = os.path.join(dest_directory, filename)
+    #
+    #         if not os.path.exists(filepath):
+    #             download_file(urls[i], filepath)
 
 
 def download_file(url, filename):
@@ -170,6 +189,7 @@ def _unpack_data(data_dir, output_dir):
 
     validation_data = UnpackInfo(name='validation', num_shards=FLAGS.validation_shards)
     train_data = UnpackInfo(name='train', num_shards=FLAGS.train_shards)
+
     tar_format = '%s/*.tar' % data_dir
     data_files = tf.gfile.Glob(tar_format)
 
@@ -186,8 +206,11 @@ def _unpack_data(data_dir, output_dir):
             names = np.core.defchararray.add(file_prefix, names)
             tar.extractall(path=path)
 
-        with tarfile.open('{}.gz'.format(file)) as tar_gz:
-            tar_gz.extractall(path=output_dir)
+        # Extract bbox
+        bbox_file = '{}.gz'.format(file)
+        if os.path.isfile(bbox_file):
+            with tarfile.open(bbox_file) as tar_gz:
+                tar_gz.extractall(path=output_dir)
 
         train_names, valid_names = np.split(names, [int(0.9 * names.size)])
 
@@ -214,28 +237,28 @@ def main(_):
     assert not FLAGS.validation_shards % FLAGS.num_threads, \
         'Please make the FLAGS.num_threads commensurate with FLAGS.validation_shards'
 
-    _maybe_download_and_extract(FLAGS.download_list)
+    # _maybe_download(FLAGS.download_list)
 
     # Unpack raw data
-    train, valid, u_labels = _unpack_data(FLAGS.data_dir, FLAGS.output_dir)
+    train, valid, labels = _unpack_data(FLAGS.data_dir, FLAGS.output_dir)
 
     # Process bounding boxes
-    process_bounding_boxes.run(FLAGS.labels_dir, FLAGS.labels_file, FLAGS.bounding_box_file)
+    process_bounding_boxes.run(FLAGS.labels_dir, labels, FLAGS.bounding_box_file)
 
-    # Build lookups
+    # # Build lookups
     synset_lookup, bbox_lookup = image_util.build_lookups(FLAGS.imagenet_metadata_file, FLAGS.bounding_box_file,
-                                                          u_labels)
+                                                          labels)
     train.set_human_classnames(synset_lookup)
     train.set_bboxes(bbox_lookup)
     valid.set_human_classnames(synset_lookup)
     valid.set_bboxes(bbox_lookup)
-
-    # Process images and write TF Records (shards)
+    #
+    # # Process images and write TF Records (shards)
     image_util.process_image_files(train, FLAGS.num_threads)
     image_util.process_image_files(valid, FLAGS.num_threads)
-
-    # Clean temp JPEG files
-    _clean_temp_data(FLAGS.output_dir, u_labels)
+    #
+    # # Clean temp JPEG files
+    _clean_temp_data(FLAGS.output_dir, labels)
 
 
 if __name__ == '__main__':

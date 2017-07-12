@@ -19,11 +19,7 @@ from datetime import datetime
 import numpy as np
 import tensorflow as tf
 
-try:
-    from data.image_coder import ImageCoder
-except ImportError:
-    # from image_coder import ImageCoder
-    from image_coder import ImageCoder as ImageCoder
+from data.image_coder import ImageCoder
 
 
 def _build_synset_lookup(imagenet_metadata_file, u_labels):

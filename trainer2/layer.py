@@ -82,9 +82,9 @@ class Conv2dLayer2(Layer):
     def outputs(self):
 
         conv = conv_layers.conv2d(
-            inputs=self.inputs,
-            filters=self.num_output_channels,
-            kernel_size=[self.kernel_dim_1, self.kernel_dim_2],
+            self.inputs,
+            self.num_output_channels,
+            [self.kernel_dim_1, self.kernel_dim_2],
             padding=DEFAULT_PADDING,
             use_bias=False,
             data_format='channels_last' if self.data_format == 'NHWC' else 'channels_first'
@@ -113,7 +113,8 @@ class AffineLayer(Layer):
         init_factor = 2. if self.activation == tf.nn.relu else 1.
 
         self.weights = tf.get_variable('weights', [self.num_channels_in, self.num_channels_out],
-            self.data_type, tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in)))
+                                       self.data_type,
+                                       tf.random_normal_initializer(stddev=np.sqrt(init_factor / self.num_channels_in)))
 
         biases = tf.get_variable('biases', [self.num_channels_out], self.data_type, tf.constant_initializer(0.0))
 

@@ -165,14 +165,11 @@ class Trainer(object):
 
     def _eval_cnn(self):
         """Evaluate the model from a checkpoint using validation dataset."""
-        (enqueue_ops, fetches) = self.model.build_graph(self.config, self.manager)
+        enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
         saver = tf.train.Saver(tf.global_variables())
         summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, tf.get_default_graph())
-        target = ''
 
-        util.log_fn('RUNNING EVAL')
-
-        with tf.Session(target=target, config=config.create_config_proto()) as sess:
+        with tf.Session(target='', config=config.create_config_proto()) as sess:
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
 
@@ -194,7 +191,7 @@ class Trainer(object):
                 if (step + 1) % FLAGS.display_every == 0:
                     duration = time.time() - start_time
                     ex_per_sec = self.batch_size * self.num_batches / duration
-                    util.log_fn('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
+                    self.log('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
                     start_time = time.time()
             precision_at_1 = count_top_1 / total_eval_count
             recall_at_5 = count_top_5 / total_eval_count
@@ -263,21 +260,6 @@ class Trainer(object):
             speed_uncertainty = np.std(speeds) / np.sqrt(float(len(speeds)))
             self.log('Local step: {} | steps/s: {:.1f} +/- {:.1f} | Loss: {:.3f}'.format(step, speed_mean,
                                                                                          speed_uncertainty, loss))
-
-# def log(self, session):
-#   """Logs training progress."""
-#   logging.info('Train [%s/%d], step %d (%.3f sec) %.1f '
-#                'global steps/s, %.1f local steps/s', self.task.type,
-#                self.task.index, self.global_step,
-#                (self.now - self.start_time),
-#                (self.global_step - self.last_global_step) /
-#                (self.now - self.last_global_time),
-#                (self.local_step - self.last_local_step) /
-#                (self.now - self.last_local_time))
-#
-#   self.last_log = self.now
-#   self.last_global_step, self.last_global_time = self.global_step, self.now
-#   self.last_local_step, self.last_local_time = self.local_step, self.now
 
 
 def load_checkpoint(saver, sess, ckpt_dir):

@@ -195,8 +195,8 @@ def config_factory():
 
     # Set device strings for training / variables / ops placement
     worker_prefix = '/job:{}/task:{}'.format(job_name, task_index)
-    # ps_device = tf.train.replica_device_setter(worker_device='{}/cpu:0'.format(worker_prefix), cluster=cluster)
-    ps_device = tf.train.replica_device_setter(ps_device='/job:ps', worker_device=worker_prefix, cluster=cluster)
+    ps_device = tf.train.replica_device_setter(worker_device='{}/cpu:0'.format(worker_prefix), cluster=cluster)
+    # ps_device = tf.train.replica_device_setter(ps_device='/job:ps', worker_device=worker_prefix, cluster=cluster)
     sync_queue_devices = ['/job:ps/task:%s/cpu:0' % i for i in range(len(ps_tasks))]
 
     # Is current task Session chief:

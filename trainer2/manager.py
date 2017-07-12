@@ -326,7 +326,7 @@ class DRManager(VariableMgr):
             with tf.control_dependencies([barrier]):
                 with tf.device(self.config.cpu_device):
                     updated_value = v.read_value()
-                    for my_d in range(len(self.config.devices)):
+                    for my_d in range(len(self.devices)):
                         training_ops.append(device_grads[my_d][i][1].assign(updated_value))
 
     def get_post_init_ops(self):

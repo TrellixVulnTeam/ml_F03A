@@ -81,11 +81,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import csv
 import glob
 import os.path
 import sys
 import xml.etree.ElementTree as ET
-import csv
 
 
 class BoundingBox(object):
@@ -117,7 +117,7 @@ def FindNumberBoundingBoxes(root):
     return index
 
 
-def ProcessXMLAnnotation(xml_file):
+def process_bbox_xml(xml_file):
     """Process a single XML file containing a bounding box."""
     # pylint: disable=broad-except
     try:
@@ -164,17 +164,18 @@ def ProcessXMLAnnotation(xml_file):
     return boxes
 
 
-def run(labels_dir, labels_file, bounding_box_file):
+def run(labels_dir, labels, bounding_box_file):
 
     xml_files = glob.glob(labels_dir + '/*/*.xml')
-    print('Identified %d XML files in %s' % (len(xml_files), labels_dir), file=sys.stderr)
+    print('Identified %d XML files in %s' % (len(xml_files), labels_dir))
 
-    labels = set([l.strip() for l in open(labels_file).readlines()])
-    print('Identified %d synset IDs in %s' % (len(labels), labels_file), file=sys.stderr)
+    # labels = set([l.strip() for l in open(labels_file).readlines()])
+    print('Identified %d synset IDs' % (len(labels)))
     assert labels is not None and len(labels) > 1
 
     skipped_boxes = 0
     skipped_files = 0
+    found_boxes = 0
     saved_boxes = 0
     saved_files = 0
 
@@ -185,21 +186,23 @@ def run(labels_dir, labels_file, bounding_box_file):
             label = os.path.basename(os.path.dirname(one_file))
             # Determine if the annotation is from an ImageNet Challenge label.
             if label not in labels:
-                skipped_files += 1
-                continue
+                raise ValueError('Invalid bbox file')
 
-            bboxes = ProcessXMLAnnotation(one_file)
+            bboxes = process_bbox_xml(one_file)
             assert bboxes is not None, 'No bounding boxes found in ' + one_file
 
             found_box = False
             for bbox in bboxes:
+                found_boxes += 1
                 if bbox.label != label:
                     skipped_boxes += 1
+                    # raise ValueError('Invalid bbox label')
                     continue
 
                 # Guard against improperly specified boxes.
                 if bbox.xmin_scaled >= bbox.xmax_scaled or bbox.ymin_scaled >= bbox.ymax_scaled:
                     skipped_boxes += 1
+                    # raise ValueError('Invalid bbox scale')
                     continue
 
                 image_filename = os.path.splitext(os.path.basename(one_file))[0]
@@ -211,12 +214,14 @@ def run(labels_dir, labels_file, bounding_box_file):
 
                 saved_boxes += 1
                 found_box = True
+
             if found_box:
                 saved_files += 1
             else:
                 skipped_files += 1
 
     print('Finished processing %d XML files.' % len(xml_files))
+    print('Found {} bboxes in total'.format(found_boxes))
     print('Skipped %d XML files not in ImageNet Challenge.' % skipped_files)
     print('Skipped %d bounding boxes.' % skipped_boxes)
     print('Wrote %d bounding boxes from %d annotated images.' % (saved_boxes, saved_files))

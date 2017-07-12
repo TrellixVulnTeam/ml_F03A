@@ -1,12 +1,12 @@
 #!/bin/bash
 
 declare -r PROJECT=$(gcloud config list project --format "value(core.project)")
-#declare -r BUCKET=gs://hpc-ml
-declare -r BUCKET=gs://vuzii-ml-mlengine
+declare -r BUCKET=gs://hpc-ml
+#declare -r BUCKET=gs://vuzii-ml-mlengine
 declare -r DATA_PATH=${BUCKET}/data
 
 declare -r JOB_NAME="run_$(date +%H%M%S)"
-declare -r OUTPUT_PATH=${BUCKET}/${JOB_NAME}
+declare -r OUTPUT_PATH=${BUCKET}/runs/${JOB_NAME}
 
 echo
 echo "Using job id: " $JOB_NAME
@@ -20,11 +20,9 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --config config/config-large.yaml \
 --region us-east1 \
 -- \
---data_dir "${DATA_PATH}/data/train" \
---train_dir "${BUCKET}/result/ps/gpu=8,adam,lr=0.001" \
---optimizer "adam" \
---manager_type "ps" \
---cross_replica_sync True \
---learning_rate 0.001 \
---batch_size 64 \
+--data_dir "${DATA_PATH}/train" \
+--train_dir "${BUCKET}/result/dr/gpu=4,mom" \
+--optimizer momentum \
+--manager_type dr \
+--batch_size 32 \
 --num_batches 1000 \
