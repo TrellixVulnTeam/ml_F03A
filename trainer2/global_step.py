@@ -23,13 +23,11 @@ class GlobalStepWatcher(threading.Thread):
         self.start_step = 0
         self.finish_time = 0
         self.finish_step = 0
-        self._value = 0
 
     def run(self):
         while self.finish_time == 0:
             time.sleep(.25)
             global_step_val, = self.sess.run([self.global_step_op])
-            self._value = global_step_val
 
             if self.start_time == 0 and global_step_val >= self.start_at_global_step:
                 log_fn('Starting real work at step {} at time {}'.format(global_step_val, time.ctime()))

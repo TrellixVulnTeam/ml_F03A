@@ -21,13 +21,12 @@ WORKER_ARRAY = ['worker', 'master']
 class Trainer(object):
     """Main class for model training."""
 
-    def __init__(self, runtime_config):
+    def __init__(self, runtime_config=None):
         self.config = runtime_config
         self.supervisor = None
         self.model = Model.trial()
         self.dataset = datasets.DatasetFactory().create_dataset(data_dir=FLAGS.data_dir)
 
-        self.trace_filename = FLAGS.trace_file
         self.num_batches = FLAGS.num_batches
         self.data_format = FLAGS.data_format
 
@@ -51,6 +50,7 @@ class Trainer(object):
                 if self.model.run_training:
                     self.train()
                 else:
+                    self.log('INIT EVAL')
                     self._eval_cnn()
 
     def train(self):
@@ -60,9 +60,10 @@ class Trainer(object):
         enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
         main_fetch_group = tf.group(*fetches)
 
-        # Create the execution barrier if not in cross replica mode
         execution_barrier = None
-        if self.config.job_name in WORKER_ARRAY and not FLAGS.cross_replica_sync:
+        if self.config.job_name in WORKER_ARRAY and not FLAGS.sync_training:
+            # Create the execution barrier if training asynconously
+            # (only used immediately before session closes).
             execution_barrier = self.manager.create_sync_queue('execution_barrier_', [])
 
         # Initiate global step, and ensure [main_fetch_group] is executed before inc_global_step
@@ -73,9 +74,9 @@ class Trainer(object):
                 inc_global_step = global_step.assign_add(1)
                 fetches.append(inc_global_step)
 
-        # If training in cross replica sync mode: Create barrier to block all replicas until
-        # all replicas are ready for next step.
-        if self.config.job_name in WORKER_ARRAY and FLAGS.cross_replica_sync:
+        if self.config.job_name in WORKER_ARRAY and FLAGS.sync_training:
+            # If training in cross replica sync mode: Create barrier to block all replicas until
+            # all replicas are ready for next step.
             replica_sync_queue = self.manager.create_sync_queue('sync_queues_step_end_', [main_fetch_group])
             fetches.append(replica_sync_queue)
 
@@ -115,7 +116,8 @@ class Trainer(object):
             local_step = -1 * self.num_warmup_batches
 
             def should_stop():
-                if FLAGS.cross_replica_sync and self.config.job_name in WORKER_ARRAY:
+                # if FLAGS.cross_replica_sync and self.config.job_name in WORKER_ARRAY:
+                if self.manager.sync_training:
                     # In cross-replica sync mode, all workers must run the same number of local steps
                     return local_step == self.num_batches
                 else:
@@ -140,7 +142,7 @@ class Trainer(object):
                     fetch_summary = None
 
                 summary_str = self.train_step(sess, fetches, local_step, self.batch_size, step_train_times,
-                                              self.trace_filename, fetch_summary)
+                                              fetch_summary)
 
                 if summary_str is not None and self.config.is_chief:
                     self.supervisor.summary_computed(sess, summary_str)
@@ -148,9 +150,10 @@ class Trainer(object):
 
             # Waits for the global step to be done, regardless of done_fn.
             self.log('{}-{} finished work: '.format(self.config.job_name, self.config.task_index), 5)
+            # self.supervisor.save_trace()
 
             while not global_step_watcher.done():
-                time.sleep(1.0)
+                time.sleep(0.2)
 
             images_per_sec = global_step_watcher.steps_per_second() * self.batch_size
             self.log('-' * 64)
@@ -166,18 +169,21 @@ class Trainer(object):
 
     def _eval_cnn(self):
         """Evaluate the model from a checkpoint using validation dataset."""
+
+        if FLAGS.train_dir is None:
+            raise ValueError('Trained model directory not specified')
+
+        eval_dir = FLAGS.train_dir
+
         enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
         saver = tf.train.Saver(tf.global_variables())
-        summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, tf.get_default_graph())
+        summary_writer = tf.summary.FileWriter(eval_dir, tf.get_default_graph())
 
         with tf.Session(target='', config=config.create_config_proto()) as sess:
             for i in range(len(enqueue_ops)):
                 sess.run(enqueue_ops[:(i + 1)])
 
-            util.log_fn('RUNNING EVAL 2')
-
-            if FLAGS.train_dir is None:
-                raise ValueError('Trained model directory not specified')
+            self.log('RUNNING EVAL')
 
             global_step = load_checkpoint(saver, sess, FLAGS.train_dir)
 
@@ -185,11 +191,13 @@ class Trainer(object):
             count_top_1 = 0.0
             count_top_5 = 0.0
             total_eval_count = self.num_batches * self.batch_size
+            # summary = tf.Summary()
             for step in range(self.num_batches):
                 results = sess.run(fetches)
+                # temp_eval_count = step * self.batch_size
                 count_top_1 += results[0]
                 count_top_5 += results[1]
-                if (step + 1) % FLAGS.display_every == 0:
+                if (step + 1) % 1000 == 0:
                     duration = time.time() - start_time
                     ex_per_sec = self.batch_size * self.num_batches / duration
                     self.log('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
@@ -200,7 +208,7 @@ class Trainer(object):
             summary.value.add(tag='eval/Accuracy@1', simple_value=precision_at_1)
             summary.value.add(tag='eval/Recall@5', simple_value=recall_at_5)
             summary_writer.add_summary(summary, global_step)
-            util.log_fn('Precision @ 1 = %.4f recall @ 5 = %.4f [%d examples]' %
+            self.log('Precision @ 1 = %.4f recall @ 5 = %.4f [%d examples]' %
                         (precision_at_1, recall_at_5, total_eval_count))
 
     def log(self, string, debug_level=1):
@@ -208,7 +216,7 @@ class Trainer(object):
             string = '{}-{}: {}'.format(self.config.job_name, self.config.task_index, string)
         util.log_fn(string, debug_level)
 
-    def train_step(self, sess, fetches, step, batch_size, step_train_times, trace_filename, summary_op=None):
+    def train_step(self, sess, fetches, step, batch_size, step_train_times, summary_op=None, trace_filename=None):
         """
         Method for training/(advancing) one step
 
@@ -221,7 +229,8 @@ class Trainer(object):
         :param summary_op: Summary operation to use in step
         :return: Summary string from training step
         """
-        if trace_filename is not None and step == -1:
+        run_trace = step % 1000 == 0 and trace_filename
+        if run_trace:
             run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
         else:
@@ -243,14 +252,9 @@ class Trainer(object):
         if step >= 0:
             self.progress_string(step+1, batch_size, step_train_times, lossval)
 
-        # if step >= 0 and (step == 0 or (step + 1) % FLAGS.display_every == 0):
-        #     util.log_fn('%i\t%s\t%.3f' % (step + 1, get_perf_timing_str(batch_size, step_train_times), lossval), 0)
-        # if trace_filename is not None and step == -1:
-        #     util.log_fn('Dumping trace to {}'.format(trace_filename), 4)
-        # trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-        # chrome_trace = trace.generate_chrome_trace_format(show_dataflow=True, show_memory=True)
-        # with open(trace_filename, 'w') as trace_file:
-        #     trace_file.write(chrome_trace)
+        if run_trace:
+            self.supervisor.write_profiling_timeline(run_metadata)
+
         return summary_str
 
     def progress_string(self, step, batch_size, step_times, loss):

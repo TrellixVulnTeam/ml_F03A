@@ -133,6 +133,7 @@ class VariableMgr(object):
         self.staging_delta_ops = []
         self.devices = self.get_devices()
         self.sync_queue_counter = 0
+        self.sync_training = FLAGS.sync_training
 
     def each_tower_has_variables(self):
         """Returns True if each GPU tower of the model has separate variables."""
@@ -261,6 +262,9 @@ class LocalManager(VariableMgr):
        Variables are stored on a parameter server.  For each step, each tower gets
        a copy of the variables from the parameter server, and sends its gradients to the param server.
     """
+    def __init__(self, trainer_config):
+        super(LocalManager, self).__init__(trainer_config)
+        self.sync_training = False
 
     def each_tower_has_variables(self):
         return False
@@ -288,6 +292,7 @@ class LocalManager(VariableMgr):
 
     def create_sync_queue(self, name_prefix, enqueue_after):
         assert False, 'create_sync_queue should not be used in local execution mode.'
+        # return None
 
 
 class PSManager(VariableMgr):
@@ -321,7 +326,7 @@ class PSManager(VariableMgr):
         ps_strategy = tf.contrib.training.GreedyLoadBalancingStrategy(
             len(self.config.ps_tasks), tf.contrib.training.byte_size_load_fn)
         return [tf.train.replica_device_setter(worker_device=d, cluster=self.config.cluster,
-                ps_strategy=ps_strategy) for d in self.config.op_devices]
+                                               ps_strategy=ps_strategy) for d in self.config.op_devices]
 
 
 class DRManager(VariableMgr):
@@ -329,9 +334,13 @@ class DRManager(VariableMgr):
 
        Each GPU has a copy of the variables, and updates its copy after the
        parameter servers are all updated with the gradients from all servers. Only
-       works with cross_replica_sync=true. Unlike 'replicated', does not use nccl
-       all-reduce for replicating within a server.
+       works with async_training=False.
     """
+    def __init__(self, trainer_config):
+        super(DRManager, self).__init__(trainer_config)
+        if FLAGS.sync_training is False:
+            tf.logging.warning('sync_training must be enabled for distributed replicated training. Overriding setting.')
+        self.sync_training = True
 
     def each_tower_has_variables(self):
         return True

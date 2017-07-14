@@ -8,7 +8,6 @@ declare -r DATA_PATH=${BUCKET}/data
 declare -r JOB_NAME="run_$(date +%H%M%S)"
 declare -r OUTPUT_PATH=${BUCKET}/runs/${JOB_NAME}
 
-echo
 echo "Using job id: " $JOB_NAME
 set -v -e
 
@@ -21,9 +20,10 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --region us-east1 \
 -- \
 --data_dir "${DATA_PATH}/train" \
---train_dir "${BUCKET}/test/ps/gpu=4,adam,bs=64,lr=0.001" \
+--train_dir "${BUCKET}/test/ps/gpu=2,async" \
 --optimizer adam \
 --manager_type ps \
+--sync_training False \
 --learning_rate 0.001 \
 --batch_size 64 \
---num_batches 500 \
+--num_batches 250 \

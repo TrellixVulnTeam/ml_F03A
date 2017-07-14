@@ -1,6 +1,7 @@
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.layers import batch_norm
 from tensorflow.python.layers import convolutional as conv_layers
 
 from trainer2.flags import get_flags
@@ -71,12 +72,15 @@ class Conv2dLayer2(Layer):
     Layer implementing a 2D convolution-based transformation of its inputs.
     """
 
-    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name):
+    def __init__(self, num_input_channels, num_output_channels, kernel_dim_1, kernel_dim_2, name, use_batch_norm=True,
+                 training=True):
         super(Conv2dLayer2, self).__init__(name)
         self.num_input_channels = num_input_channels
         self.num_output_channels = num_output_channels
         self.kernel_dim_1 = kernel_dim_1
         self.kernel_dim_2 = kernel_dim_2
+        self.use_batch_norm = use_batch_norm
+        self.training = training
 
     @define_scope
     def outputs(self):
@@ -91,7 +95,13 @@ class Conv2dLayer2(Layer):
         )
 
         biases = tf.get_variable('biases', [self.num_output_channels], self.data_type, tf.constant_initializer(0.0))
-        conv_bias = tf.reshape(tf.nn.bias_add(conv, biases, data_format=self.data_format), conv.get_shape())
+
+        if self.use_batch_norm:
+            with tf.variable_scope('{}-bn'.format(self.name)) as scope:
+                conv_bias = batch_norm(conv, is_training=self.training, fused=True, data_format=self.data_format,
+                                       scope=scope)
+        else:
+            conv_bias = tf.reshape(tf.nn.bias_add(conv, biases, data_format=self.data_format), conv.get_shape())
 
         return self.activation(conv_bias)
 
@@ -182,17 +192,23 @@ class DropoutLayer(Layer):
 
 # LAYER HELPER METHODS
 
-def _bn(inputs, output_dim):
-    """
-    Batch normalization on convolutional layers.
-    """
-    beta = tf.Variable(tf.constant(0.0, shape=[output_dim]), name='beta')
-    gamma = tf.Variable(tf.constant(1.0, shape=[output_dim]), name='gamma')
-    batch_mean, batch_var = tf.nn.moments(inputs, [0, 1, 2], name='moments')
-    epsilon = 1e-3
-    return tf.nn.batch_normalization(
-        inputs, batch_mean, batch_var, beta, gamma, epsilon, 'bn'
-    )
+# def _bn(inputs, output_dim):
+#     """
+#     Batch normalization of convolutional layer.
+#     """
+#     with tf.variable_scope('name') as scope:
+#         bn = tf.contrib.layers.batch_norm(
+#             inputs, is_training=True,
+#             fused=True, data_format=self.data_format,
+#             scope=scope, **kwargs)
+#     return bn
+#     # beta = tf.Variable(tf.constant(0.0, shape=[output_dim]), name='beta')
+#     # gamma = tf.Variable(tf.constant(1.0, shape=[output_dim]), name='gamma')
+#     # batch_mean, batch_var = tf.nn.moments(inputs, [0, 1, 2], name='moments')
+#     # epsilon = 1e-3
+#     # return tf.nn.batch_normalization(
+#     #     inputs, batch_mean, batch_var, beta, gamma, epsilon, 'bn'
+#     )
 
 
 def _weights(shape, stddev=0.1, name='weights'):

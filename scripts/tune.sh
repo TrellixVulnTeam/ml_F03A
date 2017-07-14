@@ -24,7 +24,7 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 -- \
 --data_dir "${DATA_PATH}/data/train" \
 --train_dir "${BUCKET}/tune/${JOB_NAME}" \
---num_batches 2000 \
+--num_batches 64000 \
 
 # Create model
 # gcloud ml-engine models create $MODEL_NAME

@@ -27,7 +27,7 @@ tf.flags.DEFINE_string('eval_dir', 'eval', 'Directory where to write eval event 
 
 tf.flags.DEFINE_string('pretrain_dir', None, 'Path to pretrained session checkpoints.')
 # TUTORIAL: https://medium.com/towards-data-science/howto-profile-tensorflow-1a49fb18073d
-tf.flags.DEFINE_string('trace_file', None, 'Enable TensorFlow tracing and write trace to this file.')
+tf.flags.DEFINE_string('trace_file', 'trace.json', 'Enable TensorFlow tracing and write trace to this file.')
 
 tf.flags.DEFINE_string(
     'graph_file', None,
@@ -171,7 +171,7 @@ tf.flags.DEFINE_boolean('use_nccl', True, 'Whether to use nccl all-reduce primit
 # Use 'grpc' normally, and 'grpc+mpi' on ARCHER
 tf.flags.DEFINE_string('server_protocol', 'grpc', 'protocol for servers')
 
-tf.flags.DEFINE_boolean('cross_replica_sync', True, '')
+tf.flags.DEFINE_boolean('sync_training', True, 'Enable/disable devices syncronisation after each step.')
 
 
 def get_flags():

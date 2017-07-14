@@ -97,7 +97,7 @@ class Model:
 
                 if self.run_training:
                     losses.append(results[0])
-                    device_grads.append(results[2])
+                    device_grads.append(results[1])
                 else:
                     all_logits.append(results[0])
                     all_top_1_ops.append(results[1])
@@ -272,29 +272,18 @@ class Model:
 
     @classmethod
     def trial(cls):
-
-        layers_img = [
-            Conv2dLayer2(3, 32, 5, 5, 'conv_1'),
+        output_classes = 21 if FLAGS.data_dir is not None else 1001
+        layers = [
+            Conv2dLayer2(3, 32, 5, 5, 'conv_1', training=FLAGS.run_training),
             PoolLayer('pool_1'),
-            Conv2dLayer2(32, 64, 5, 5, 'conv_2'),
+            Conv2dLayer2(32, 64, 5, 5, 'conv_2', training=FLAGS.run_training),
             PoolLayer('pool_2'),
-            Conv2dLayer2(64, 128, 5, 5, 'conv_3'),
+            Conv2dLayer2(64, 128, 5, 5, 'conv_3', training=FLAGS.run_training),
             PoolLayer('pool_3'),
             ReshapeLayer(output_shape=[-1, 128 * 8 * 8]),
             AffineLayer('fc_1', 8192, 512),
-            AffineLayer('output', 512, 21, final_layer=True)
+            AffineLayer('output', 512, output_classes, final_layer=True)
         ]
-
-        layers_syn = [
-            Conv2dLayer2(3, 16, 5, 5, 'conv_1'),
-            PoolLayer('pool_1'),
-            Conv2dLayer2(32, 16, 5, 5, 'conv_2'),
-            PoolLayer('pool_2'),
-            ReshapeLayer(output_shape=[-1, 16 * 8 * 8]),
-            AffineLayer('fc_1', 1024, 512),
-            AffineLayer('output', 512, 1001, final_layer=True)
-        ]
-        layers = layers_img if FLAGS.data_dir is not None else layers_syn
         return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=tf.nn.relu)
 
 
