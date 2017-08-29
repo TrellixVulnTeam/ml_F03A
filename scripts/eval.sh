@@ -1,7 +1,7 @@
 #!/bin/bash
 
 declare -r PROJECT=$(gcloud config list project --format "value(core.project)")
-declare -r BUCKET=gs://hpc-ml
+declare -r BUCKET=gs://storage-ml
 declare -r DATA_PATH=${BUCKET}/data
 
 declare -r JOB_NAME="eval_$(date +%H%M%S)"
@@ -17,12 +17,13 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --module-name trainer2.main \
 --config config/config-eval.yaml \
 --package-path trainer2/ \
+--region us-east1 \
 -- \
 --run_training False \
 --data_dir "${DATA_PATH}/validation" \
---train_dir "${BUCKET}/test/ps/gpu=2,async" \
+--train_dir "${BUCKET}/topology/ps/4xsingle_gpu,2ps" \
 --manager_type local \
---run_training False \
+--optimizer momentum \
 --num_batches 500 \
---batch_size 64 \
+--batch_size 256 \
 --debug_level 4 \

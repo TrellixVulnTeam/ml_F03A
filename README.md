@@ -4,10 +4,6 @@
 
 MSc project on Deep Learning
 
-## Getting Started
-
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
-
 ### Prerequisites
 
 What things you need to install the software and how to install them
@@ -17,39 +13,35 @@ Python
 TensorFlow
 ```
 
+The code is modified to easily fit the Google Cloud ML runtime environment, local execution is still possible.    
+
 ### Installing
 
-Use pip to install dependencies.
+Use pip to install dependencies. It is recommended to first create a virtual environment. 
 
 ```
 pip install -r "requirements.txt"
 ```
 
-End with an example of getting some data out of the system or using it for a little demo
-
 ## Running the tests
+The tests were written using Python's Unittest. 
 
-Explain how to run the automated tests for this system
-
-### Break down into end to end tests
-
-Explain what these tests test and why
-
+The main purpose of the tests is to check the validity of the ouput of the key methods in the code. In other cases the format of the tensors are verified.    
 ```
-Give an example
+python -m unittest
 ```
 
-### And coding style tests
+Flake8 is used to check code formatting and consistency, and is checked when the test command is executed.
 
-Explain what these tests test and why
+## Project Structure
 
-```
-Give an example
-```
+The `config` directory contains example scripts used to define Google Cloud ML job configurations, like custom machine scale and hyperparameter training settings. 
 
-## Deployment
+`scripts` contains examples of job submission scripts. These specify job parameters such as code path, runtime version and training data locations.
 
-Add additional notes about how to deploy this on a live system
+The `data` directory holds training and validation data, in addition to a utility script for downloading and building images from ImageNet to TFRecords.
+
+`trainer2` contains the deep learning code.  
 
 ## Built With
 

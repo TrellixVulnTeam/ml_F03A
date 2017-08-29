@@ -107,6 +107,7 @@ ENV/
 /trainer2/train_dir/
 /data/img_data/
 /data/raw_data/
+/result/
 /data/Annotation/
 /data/data/
 /trainer/

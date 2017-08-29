@@ -117,6 +117,7 @@ def get_cloud_ml_device_count(job_data, job_name):
         'standard': (1, 0),
         'standard_gpu': (1, 1),
         'complex_model_m_gpu': (1, 4),
+        'complex_model_l_gpu': (1, 8),
         'large_model': (1, 0)
     }
 

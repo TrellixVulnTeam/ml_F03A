@@ -72,12 +72,16 @@ tf.flags.DEFINE_string(
 # TRAINING CONFIG
 #############
 
+tf.flags.DEFINE_string(
+    'activation', 'relu',
+    'Optimizer to use: relu or elu')
+
 tf.flags.DEFINE_float(
-    'learning_rate', 0.0055,
+    'learning_rate', 0.0027498,
     'Initial learning rate for training.')
 
 tf.flags.DEFINE_string(
-    'optimizer', 'momentum',
+    'optimizer', 'adam',
     'Optimizer to use: momentum, adam, sgd or rmsprop')
 
 tf.flags.DEFINE_float(
@@ -104,6 +108,10 @@ tf.flags.DEFINE_float(
     'weight_decay', 0.00004,
     'Weight decay factor for training.')
 
+tf.flags.DEFINE_float(
+    'epsilon', 1e-8,
+    'Weight decay factor for training.')
+
 #############
 # OUTPUT / SUMMARIES
 #############
@@ -117,7 +125,7 @@ tf.flags.DEFINE_bool(
     'Verbosity level for summary ops. Pass 0 to disable both summaries and checkpoints.')
 
 tf.flags.DEFINE_integer(
-    'save_summaries_steps', 50,
+    'save_summaries_steps', 100,
     'How often to save summaries for trained models. Pass 0 to disable summaries.')
 
 tf.flags.DEFINE_integer(

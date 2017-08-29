@@ -27,6 +27,7 @@ class Model:
         assert len(layers) > 0
         assert name is not None
         assert isinstance(layers[-1], AffineLayer)
+        assert activation in [tf.nn.relu, tf.nn.elu]
 
         self.name = name
         self.layers = layers
@@ -145,9 +146,9 @@ class Model:
                     decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
                     # Decay the learning rate exponentially based on the number of steps.
-                    # self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
-                    #                                                 decay_steps, FLAGS.learning_rate_decay_factor,
-                    #                                                 staircase=True)
+                    self.learning_rate = tf.train.exponential_decay(self.learning_rate, global_step,
+                                                                    decay_steps, FLAGS.learning_rate_decay_factor,
+                                                                    staircase=True)
 
                 if gradient_clip is not None:
                     clipped_grads = [(tf.clip_by_value(grad, -gradient_clip, +gradient_clip), var)
@@ -194,7 +195,7 @@ class Model:
         elif optimizer_flag == 'sgd':
             return tf.train.GradientDescentOptimizer(self.learning_rate)
         elif optimizer_flag == 'adam':
-            return tf.train.AdamOptimizer(self.learning_rate, epsilon=0.1)
+            return tf.train.AdamOptimizer(self.learning_rate, epsilon=FLAGS.epsilon)
         else:
             return tf.train.RMSPropOptimizer(self.learning_rate, FLAGS.rmsprop_decay, momentum=FLAGS.momentum)
 
@@ -215,7 +216,7 @@ class Model:
             images, labels = gpu_compute_stage.get()
             images = tf.reshape(images, shape=images_shape)
             gpu_compute_stage_ops.append(gpu_compute_stage_op)
-            return images, labels
+        return images, labels
 
     def reformat_images(self, images):
         # Rescale to [0, 1)
@@ -281,10 +282,12 @@ class Model:
             Conv2dLayer2(64, 128, 5, 5, 'conv_3', training=FLAGS.run_training),
             PoolLayer('pool_3'),
             ReshapeLayer(output_shape=[-1, 128 * 8 * 8]),
-            AffineLayer('fc_1', 8192, 512),
+            AffineLayer('fc_1', 128*8*8, 512),
             AffineLayer('output', 512, output_classes, final_layer=True)
         ]
-        return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=tf.nn.relu)
+        activation = tf.nn.relu if FLAGS.activation == 'relu' else tf.nn.elu
+        assert FLAGS.activation in ['relu', 'elu']
+        return cls(name='trial', layers=layers, run_training=FLAGS.run_training, activation=activation)
 
 
 def loss_function(logits, labels):

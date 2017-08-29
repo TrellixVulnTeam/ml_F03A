@@ -12,7 +12,7 @@ declare -r VERSION_NAME=v0
 declare -r RUNTIME_VERSION=1.2
 
 echo "Using job id: " $JOB_NAME
- set -v -e
+set -v -e
 
 gcloud ml-engine jobs submit training $JOB_NAME \
 --job-dir $OUTPUT_PATH \
@@ -23,7 +23,12 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 --region us-east1 \
 -- \
 --data_dir "${DATA_PATH}/train" \
---train_dir "${BUCKET}/hp_tuning/ps/batch,async" \
+--train_dir "${BUCKET}/tuning/second/ps/adam" \
+--optimizer adam \
 --manager_type ps \
---num_batches 1000 \
---sync_training False \
+--num_batches 2000 \
+--sync_training True \
+--learning_rate 0.00113 \
+--activation relu \
+--batch_size 512 \
+--epsilon 0.007338138895 \

@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import os
 import time
 
 import numpy as np
@@ -173,7 +174,8 @@ class Trainer(object):
         if FLAGS.train_dir is None:
             raise ValueError('Trained model directory not specified')
 
-        eval_dir = FLAGS.train_dir
+        eval_dir = os.path.join(FLAGS.train_dir, 'eval')
+        self.log('eval_dir: {}'.format(eval_dir))
 
         enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
         saver = tf.train.Saver(tf.global_variables())
@@ -187,17 +189,18 @@ class Trainer(object):
 
             global_step = load_checkpoint(saver, sess, FLAGS.train_dir)
 
+            self.log('Checkpoint loaded.')
+
             start_time = time.time()
             count_top_1 = 0.0
             count_top_5 = 0.0
             total_eval_count = self.num_batches * self.batch_size
-            # summary = tf.Summary()
+
             for step in range(self.num_batches):
                 results = sess.run(fetches)
-                # temp_eval_count = step * self.batch_size
                 count_top_1 += results[0]
                 count_top_5 += results[1]
-                if (step + 1) % 1000 == 0:
+                if (step + 1) % 10 == 0:
                     duration = time.time() - start_time
                     ex_per_sec = self.batch_size * self.num_batches / duration
                     self.log('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
@@ -209,7 +212,53 @@ class Trainer(object):
             summary.value.add(tag='eval/Recall@5', simple_value=recall_at_5)
             summary_writer.add_summary(summary, global_step)
             self.log('Precision @ 1 = %.4f recall @ 5 = %.4f [%d examples]' %
-                        (precision_at_1, recall_at_5, total_eval_count))
+                     (precision_at_1, recall_at_5, total_eval_count))
+
+    def eval(self):
+        """Evaluate the model from a checkpoint using validation dataset."""
+
+        if FLAGS.train_dir is None:
+            raise ValueError('Trained model directory not specified')
+
+        eval_dir = os.path.join(FLAGS.train_dir, 'eval')
+        self.log('eval_dir: {}'.format(eval_dir))
+
+        enqueue_ops, fetches = self.model.build_graph(self.config, self.manager)
+        saver = tf.train.Saver(tf.global_variables())
+        summary_writer = tf.summary.FileWriter(eval_dir, tf.get_default_graph())
+
+        with tf.Session(target='', config=config.create_config_proto()) as sess:
+            for i in range(len(enqueue_ops)):
+                sess.run(enqueue_ops[:(i + 1)])
+
+            self.log('RUNNING EVAL')
+
+            global_step = load_checkpoint(saver, sess, FLAGS.train_dir)
+
+            self.log('Checkpoint loaded.')
+
+            start_time = time.time()
+            count_top_1 = 0.0
+            count_top_5 = 0.0
+            total_eval_count = self.num_batches * self.batch_size
+
+            for step in range(self.num_batches):
+                results = sess.run(fetches)
+                count_top_1 += results[0]
+                count_top_5 += results[1]
+                if (step + 1) % 10 == 0:
+                    duration = time.time() - start_time
+                    ex_per_sec = self.batch_size * self.num_batches / duration
+                    self.log('%i\t%.1f examples/sec' % (step + 1, ex_per_sec))
+                    start_time = time.time()
+            precision_at_1 = count_top_1 / total_eval_count
+            recall_at_5 = count_top_5 / total_eval_count
+            summary = tf.Summary()
+            summary.value.add(tag='eval/Accuracy@1', simple_value=precision_at_1)
+            summary.value.add(tag='eval/Recall@5', simple_value=recall_at_5)
+            summary_writer.add_summary(summary, global_step)
+            self.log('Precision @ 1 = %.4f recall @ 5 = %.4f [%d examples]' %
+                     (precision_at_1, recall_at_5, total_eval_count))
 
     def log(self, string, debug_level=1):
         if FLAGS.debug_level > 3:
