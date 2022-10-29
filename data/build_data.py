@@ -204,13 +204,51 @@ def _unpack_data(data_dir, output_dir):
             # noinspection PyTypeChecker
             file_prefix = np.full_like(names, fill_value=path)
             names = np.core.defchararray.add(file_prefix, names)
-            tar.extractall(path=path)
+            def is_within_directory(directory, target):
+                
+                abs_directory = os.path.abspath(directory)
+                abs_target = os.path.abspath(target)
+            
+                prefix = os.path.commonprefix([abs_directory, abs_target])
+                
+                return prefix == abs_directory
+            
+            def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+            
+                for member in tar.getmembers():
+                    member_path = os.path.join(path, member.name)
+                    if not is_within_directory(path, member_path):
+                        raise Exception("Attempted Path Traversal in Tar File")
+            
+                tar.extractall(path, members, numeric_owner=numeric_owner) 
+                
+            
+            safe_extract(tar, path=path)
 
         # Extract bbox
         bbox_file = '{}.gz'.format(file)
         if os.path.isfile(bbox_file):
             with tarfile.open(bbox_file) as tar_gz:
-                tar_gz.extractall(path=output_dir)
+                def is_within_directory(directory, target):
+                    
+                    abs_directory = os.path.abspath(directory)
+                    abs_target = os.path.abspath(target)
+                
+                    prefix = os.path.commonprefix([abs_directory, abs_target])
+                    
+                    return prefix == abs_directory
+                
+                def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                
+                    for member in tar.getmembers():
+                        member_path = os.path.join(path, member.name)
+                        if not is_within_directory(path, member_path):
+                            raise Exception("Attempted Path Traversal in Tar File")
+                
+                    tar.extractall(path, members, numeric_owner=numeric_owner) 
+                    
+                
+                safe_extract(tar_gz, path=output_dir)
 
         train_names, valid_names = np.split(names, [int(0.9 * names.size)])
 
